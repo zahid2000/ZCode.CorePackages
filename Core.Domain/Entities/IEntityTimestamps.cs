@@ -1,4 +1,4 @@
-﻿namespace NArchitecture.Core.Persistence.Repositories;
+﻿namespace ZCode.Core.Domain.Entities;
 
 public interface IEntityTimestamps
 {

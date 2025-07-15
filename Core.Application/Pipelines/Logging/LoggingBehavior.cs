@@ -1,10 +1,10 @@
 ﻿//using System.Text.Json;
 //using MediatR;
 //using Microsoft.AspNetCore.Http;
-//using NArchitecture.Core.CrossCuttingConcerns.Logging;
-//using NArchitecture.Core.CrossCuttingConcerns.Logging.Abstraction;
+//using ZCode.Core.CrossCuttingConcerns.Logging;
+//using ZCode.Core.CrossCuttingConcerns.Logging.Abstraction;
 
-//namespace NArchitecture.Core.Application.Pipelines.Logging;
+//namespace ZCode.Core.Application.Pipelines.Logging;
 
 //public class LoggingBehavior<TRequest, TResponse> : IPipelineBehavior<TRequest, TResponse>
 //    where TRequest : IRequest<TResponse>, ILoggableRequest

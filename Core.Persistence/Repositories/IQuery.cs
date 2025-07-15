@@ -1,4 +1,4 @@
-﻿namespace NArchitecture.Core.Persistence.Repositories;
+﻿namespace ZCode.Core.Persistence.Repositories;
 
 public interface IQuery<T>
 {

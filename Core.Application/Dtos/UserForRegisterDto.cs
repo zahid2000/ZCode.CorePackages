@@ -1,6 +1,6 @@
 ﻿using System.Text.Json.Serialization;
 
-namespace NArchitecture.Core.Application.Dtos;
+namespace ZCode.Core.Application.Dtos;
 
 public class UserForRegisterDto : IDto
 {
