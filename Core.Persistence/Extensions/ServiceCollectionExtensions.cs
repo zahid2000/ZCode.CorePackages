@@ -1,41 +1,95 @@
-using Microsoft.Extensions.DependencyInjection;
+﻿using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Win32;
 using System.Reflection;
-
 namespace ZCode.Core.Persistence.Extensions;
 
+/// <summary>
+/// Represents the lifetime scope of a dependency injection registration.
+/// </summary>
+public enum LifeCycle
+{
+    /// <summary>
+    /// A single instance is created and shared for the application's lifetime.
+    /// </summary>
+    Singleton,
+
+    /// <summary>
+    /// A new instance is created per HTTP request or scope.
+    /// </summary>
+    Scoped,
+
+    /// <summary>
+    /// A new instance is created each time it is requested.
+    /// </summary>
+    Transient
+}
 
 public static class ServiceCollectionExtensions
 {
-    public static void RegisterAllRepositories(this IServiceCollection services, Assembly assembly, Type baseInterface = null)
+    /// <summary>
+    /// Registers all non-abstract classes from the given assembly whose names end with the specified suffix.
+    /// If a matching interface (by name) is found, registers the class as that interface.
+    /// If no interface is found, registers the class itself.
+    /// </summary>
+    /// <param name="services">The service collection to register into (IServiceCollection).</param>
+    /// <param name="assembly">The assembly to scan for classes.</param>
+    /// <param name="suffix">The suffix used to filter class and interface names (e.g., "Service", "Repository").</param>
+    /// <param name="lifeCycle">The desired DI lifetime (Scoped, Singleton, Transient).</param>
+
+    public static void RegisterBySuffix(
+        this IServiceCollection services,
+        Assembly assembly,
+        string suffix,
+        LifeCycle lifeCycle = LifeCycle.Scoped)
     {
         var types = assembly.GetTypes();
 
-        var interfaces = types.Where(t => t.IsInterface && t.Name.EndsWith("Repository"));
-        var implementations = types.Where(t => t.IsClass && !t.IsAbstract && t.Name.EndsWith("Repository"));
+        // Suffix-ə uyğun, abstract olmayan class-ları tapırıq
+        var classTypes = types
+            .Where(t => t.IsClass
+                     && !t.IsAbstract
+                     && t.Name.ToUpperInvariant()
+                               .EndsWith(suffix.ToUpperInvariant())
+                  )
+            .ToList();
 
-        foreach (var @interface in interfaces)
+        foreach (var implementation in classTypes)
         {
-            var implementation = implementations.FirstOrDefault(x => @interface.IsAssignableFrom(x));
-            if (implementation != null)
-            {
-                services.AddScoped(@interface, implementation);
-            }
+            // Həmin class-ın suffix-lə bitən interfeysini axtarırıq (əgər varsa)
+            var interfaceType = implementation.GetInterfaces()
+                .FirstOrDefault(i => i.Name.ToUpperInvariant().EndsWith(suffix.ToUpperInvariant()) && i.IsPublic);
+
+            // Əgər interface varsa → interface ilə register et
+            // Interface yoxdursa → özünü özünə register et
+            if (interfaceType != null)
+                Register(services, interfaceType, implementation, lifeCycle);
+            else
+                Register(services, implementation, implementation, lifeCycle);
         }
+    }
 
-        // Optional: register generic IRepository<T> to Repository<T> if needed
-        if (baseInterface != null && baseInterface.IsGenericTypeDefinition)
+    /// <summary>
+    /// Registers the implementation type into the service collection with the specified lifetime.
+    /// If the serviceType is equal to the implementationType, registers the type as itself (no interface).
+    /// </summary>
+    /// <param name="services">The service collection to register into.</param>
+    /// <param name="serviceType">The interface or service type to register.</param>
+    /// <param name="implementationType">The concrete class that implements the service.</param>
+    /// <param name="lifeCycle">The desired DI lifetime.</param>
+
+    private static void Register(IServiceCollection services, Type serviceType, Type implementationType, LifeCycle lifeCycle)
+    {
+        switch (lifeCycle)
         {
-            foreach (var impl in implementations)
-            {
-                var repoInterface = impl.GetInterfaces().FirstOrDefault(i =>
-                    i.IsGenericType &&
-                    i.GetGenericTypeDefinition() == baseInterface);
-
-                if (repoInterface != null)
-                {
-                    services.AddScoped(repoInterface, impl);
-                }
-            }
+            case LifeCycle.Singleton:
+                services.AddSingleton(serviceType, implementationType);
+                break;
+            case LifeCycle.Scoped:
+                services.AddScoped(serviceType, implementationType);
+                break;
+            case LifeCycle.Transient:
+                services.AddTransient(serviceType, implementationType);
+                break;
         }
     }
 }
