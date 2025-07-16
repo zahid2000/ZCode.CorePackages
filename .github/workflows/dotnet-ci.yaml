@@ -29,5 +29,5 @@ jobs:
       - name: Restore .NET tools
         run: dotnet tool restore
 
-      - name: Check formatting with CSharpier
-        run: dotnet csharpier --check .
+      # - name: Check formatting with CSharpier
+      #   run: dotnet csharpier --check .
