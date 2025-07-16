@@ -2,8 +2,8 @@
 
 on:
   push:
-    tags:
-      - "v*.*.*"  # Məsələn: v1.2.3
+    branches:
+      - main
 
 jobs:
   publish:
@@ -16,13 +16,7 @@ jobs:
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 9.0.x
-
-      - name: Extract version from tag
-        id: get_version
-        run: |
-          TAG=${GITHUB_REF#refs/tags/v}
-          echo "version=$TAG" >> $GITHUB_OUTPUT
-
+     
       - name: Restore
         run: dotnet restore
 
@@ -30,10 +24,7 @@ jobs:
         run: dotnet build --configuration Release --no-restore
 
       - name: Pack
-        run: |
-          dotnet pack --configuration Release --no-build \
-            /p:PackageVersion=${{ steps.get_version.outputs.version }} \
-            --output ./nupkgs
+        run: dotnet pack --configuration Release --no-build -o ./nupkgs
 
       - name: Push to NuGet
         env:
