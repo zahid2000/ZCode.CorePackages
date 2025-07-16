@@ -15,6 +15,28 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Core.CrossCuttingConcerns.E
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Core.Domain", "Core.Domain\Core.Domain.csproj", "{6FC23ED7-E74E-4113-9C14-824E42BBDA50}"
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{7E619997-C4F7-41D3-B51C-B4DFF9A281F2}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "docs", "docs", "{57E8AEB0-544F-4142-AD40-943B5E32D0EA}"
+	ProjectSection(SolutionItems) = preProject
+		Solution Items\docs\LICENSE.txt = Solution Items\docs\LICENSE.txt
+		Solution Items\docs\README.md = Solution Items\docs\README.md
+	EndProjectSection
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "images", "images", "{8DDF0A26-CD14-4CF6-884C-F7E27AED190F}"
+	ProjectSection(SolutionItems) = preProject
+		Solution Items\docs\images\ZCode.ico = Solution Items\docs\images\ZCode.ico
+	EndProjectSection
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = ".github", ".github", "{F5E0AFEF-8F48-4C87-B2AB-115093628FA2}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "workflows", "workflows", "{40FBB7E3-F030-43F8-AF8E-E50AB0371A91}"
+	ProjectSection(SolutionItems) = preProject
+		dotnet-ci.yaml = dotnet-ci.yaml
+		nuget-tag-publish.yaml = nuget-tag-publish.yaml
+		release.yaml = release.yaml
+	EndProjectSection
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -51,6 +73,10 @@ Global
 		{469AF662-D1AB-47BC-9D1A-0A5BD8D9B34E} = {02EA681E-C7D8-13C7-8484-4AC65E1B71E8}
 		{56EB21D8-0E1A-42E5-A2A3-01545C44181E} = {02EA681E-C7D8-13C7-8484-4AC65E1B71E8}
 		{6FC23ED7-E74E-4113-9C14-824E42BBDA50} = {02EA681E-C7D8-13C7-8484-4AC65E1B71E8}
+		{57E8AEB0-544F-4142-AD40-943B5E32D0EA} = {7E619997-C4F7-41D3-B51C-B4DFF9A281F2}
+		{8DDF0A26-CD14-4CF6-884C-F7E27AED190F} = {57E8AEB0-544F-4142-AD40-943B5E32D0EA}
+		{F5E0AFEF-8F48-4C87-B2AB-115093628FA2} = {7E619997-C4F7-41D3-B51C-B4DFF9A281F2}
+		{40FBB7E3-F030-43F8-AF8E-E50AB0371A91} = {F5E0AFEF-8F48-4C87-B2AB-115093628FA2}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {AB254988-B2F2-4F55-9D16-20A769976020}
