@@ -1,3 +1,3 @@
-﻿//namespace ZCode.Core.Application.Pipelines.Logging;
+﻿namespace ZCode.Core.Application.Pipelines.Logging;
 
-//public interface ILoggableRequest { }
+public interface ILoggableRequest { }

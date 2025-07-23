@@ -28,8 +28,6 @@ public static class IQueryableDynamicFilterExtensions
 
     public static IQueryable<T> ToDynamic<T>(this IQueryable<T> query, DynamicQuery dynamicQuery)
     {
-        // Test
-        Console.WriteLine(dynamicQuery.Filter.Value);
         if (dynamicQuery.Filter is not null)
             query = Filter(query, dynamicQuery.Filter);
         if (dynamicQuery.Sort is not null && dynamicQuery.Sort.Any())

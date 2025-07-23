@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<TargetFramework>net9.0</TargetFramework>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<Nullable>enable</Nullable>
+		<Version>1.0.0</Version>
+		<RootNamespace>ZCode.$(AssemblyName)</RootNamespace>
+		<GeneratePackageOnBuild>True</GeneratePackageOnBuild>
+		<PackageId>ZCode.$(AssemblyName)</PackageId>
+		<Title>ZCode $(AssemblyName)</Title>
+		<Description>Security utilities including JWT, hashing, encryption, authentication, and authorization for Clean Architecture applications.</Description>
+		<Product>ZCode</Product>
+		<Authors>ZCode.io, Contributors</Authors>
+		<Company>ZCode.io</Company>
+		<PackageIconUrl>ZCode.ico</PackageIconUrl>
+		<PackageTags>
+			Clean Architecture, Security, JWT, Authentication, Authorization, Hashing, Encryption
+		</PackageTags>
+		<RepositoryUrl>https://github.com/zahid2000/ZCode.CorePackages</RepositoryUrl>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="9.0.7" />
+		<PackageReference Include="Microsoft.IdentityModel.Tokens" Version="8.3.0" />
+		<PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="8.3.0" />
+		<PackageReference Include="BCrypt.Net-Next" Version="4.0.3" />
+		<PackageReference Include="Microsoft.AspNetCore.Http.Abstractions" Version="2.3.0" />
+		<PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" Version="9.0.7" />
+		<PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="9.0.7" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<ProjectReference Include="..\Core.Application\Core.Application.csproj" />
+	</ItemGroup>
+
+</Project>

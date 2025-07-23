@@ -1,6 +1,9 @@
 ﻿using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Win32;
+using Microsoft.EntityFrameworkCore;
 using System.Reflection;
+using ZCode.Core.Persistence.Interceptors;
+using ZCode.Core.Persistence.Services;
+using ZCode.Core.Persistence.UnitOfWork;
 namespace ZCode.Core.Persistence.Extensions;
 
 /// <summary>
@@ -91,5 +94,16 @@ public static class ServiceCollectionExtensions
                 services.AddTransient(serviceType, implementationType);
                 break;
         }
+    }
+
+    public static IServiceCollection AddPersistenceServices<TContext>(this IServiceCollection services)
+        where TContext : DbContext
+    {
+        services.AddScoped<IDateTimeService, DateTimeService>();
+        services.AddScoped<IUnitOfWork, UnitOfWork<TContext>>();
+        services.AddScoped<DomainEventsInterceptor>();
+        services.AddScoped<AuditableEntitySaveChangesInterceptors<Guid>>();
+
+        return services;
     }
 }

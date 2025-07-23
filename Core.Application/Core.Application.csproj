@@ -9,7 +9,7 @@
 		<GeneratePackageOnBuild>True</GeneratePackageOnBuild>
 		<PackageId>ZCode.$(AssemblyName)</PackageId>
 		<Title>ZCode $(AssemblyName)</Title>
-		<Description>Provides security utilities for hashing, encryption, JWT, authenticator, and more.</Description>
+		<Description>Core application layer providing CQRS with MediatR, validation, caching, performance monitoring, and pipeline behaviors for Clean Architecture applications.</Description>
 		<Product>ZCode</Product>
 		<Authors>ZCode.io, Contributors</Authors>
 		<Company>ZCode.io</Company>
@@ -28,6 +28,8 @@
 
 	<ItemGroup>
 		<PackageReference Include="FluentValidation" Version="12.0.0" />
+		<PackageReference Include="FluentValidation.DependencyInjectionExtensions" Version="12.0.0" />
+		<PackageReference Include="FluentValidation.AspNetCore" Version="11.3.1" />
 		<PackageReference Include="MediatR" Version="13.0.0" />
 		<PackageReference Include="Microsoft.AspNetCore.Http.Abstractions" Version="2.3.0" />
 		<PackageReference Include="Microsoft.Extensions.Caching.Abstractions" Version="9.0.7" />

@@ -9,7 +9,7 @@
 		<GeneratePackageOnBuild>True</GeneratePackageOnBuild>
 		<PackageId>ZCode.$(AssemblyName)</PackageId>
 		<Title>ZCode $(AssemblyName)</Title>
-		<Description>Provides security utilities for hashing, encryption, JWT, authenticator, and more.</Description>
+		<Description>Core exception handling providing custom exception types and handlers for Clean Architecture applications.</Description>
 		<Product>ZCode</Product>
 		<Authors>ZCode.io, Contributors</Authors>
 		<Company>ZCode.io</Company>
