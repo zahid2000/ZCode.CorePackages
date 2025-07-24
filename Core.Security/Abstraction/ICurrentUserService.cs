@@ -1,4 +1,4 @@
-namespace ZCode.Core.Application.Security;
+namespace ZCode.Core.Security.Abstraction;
 
 public interface ICurrentUserService
 {

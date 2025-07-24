@@ -23,6 +23,7 @@
 	<ItemGroup>
 		<PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="9.0.7" />
 		<PackageReference Include="Microsoft.IdentityModel.Tokens" Version="8.3.0" />
+		<PackageReference Include="Otp.NET" Version="1.4.0" />
 		<PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="8.3.0" />
 		<PackageReference Include="BCrypt.Net-Next" Version="4.0.3" />
 		<PackageReference Include="Microsoft.AspNetCore.Http.Abstractions" Version="2.3.0" />
@@ -31,7 +32,7 @@
 	</ItemGroup>
 
 	<ItemGroup>
-		<ProjectReference Include="..\Core.Application\Core.Application.csproj" />
+	  <ProjectReference Include="..\Core.Domain\Core.Domain.csproj" />
 	</ItemGroup>
 
 </Project>

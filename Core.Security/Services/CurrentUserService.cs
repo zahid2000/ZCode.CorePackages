@@ -1,6 +1,6 @@
 using Microsoft.AspNetCore.Http;
 using System.Security.Claims;
-using ZCode.Core.Application.Security;
+using ZCode.Core.Security.Abstraction;
 
 namespace ZCode.Core.Security.Services;
 

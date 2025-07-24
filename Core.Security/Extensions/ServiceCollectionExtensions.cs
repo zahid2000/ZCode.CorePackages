@@ -1,26 +1,31 @@
 using Microsoft.AspNetCore.Authentication.JwtBearer;
-using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.IdentityModel.Tokens;
-using System.Text;
-using ZCode.Core.Application.Security;
+using ZCode.Core.Security.Abstraction;
+using ZCode.Core.Security.Encrypting;
 using ZCode.Core.Security.Hashing;
 using ZCode.Core.Security.JWT;
+using ZCode.Core.Security.Models;
 using ZCode.Core.Security.Services;
+using NArchitecture.Core.Security.EmailAuthenticator;
+using NArchitecture.Core.Security.OtpAuthenticator;
+using NArchitecture.Core.Security.OtpAuthenticator.OtpNet;
+using NArchitecture.Core.Security.SmsAuthenticator;
 
 namespace ZCode.Core.Security.Extensions;
 
 public static class ServiceCollectionExtensions
 {
-    public static IServiceCollection AddSecurityServices(this IServiceCollection services, IConfiguration configuration)
+    public static IServiceCollection AddSecurityServices<TUserId,TRefreshTokenId>(this IServiceCollection services, IConfiguration configuration)
+    where TUserId : IEquatable<TUserId>
     {
         // JWT Settings
-        services.Configure<JwtSettings>(configuration.GetSection("JwtSettings"));
+        services.Configure<TokenOption>(configuration.GetSection("TokenOptions"));
 
         // Services
-        services.AddScoped<IJwtService, JwtService>();
-        services.AddScoped<IHashingService, BCryptHashingService>();
+        services.AddScoped<ITokenService<TUserId,TRefreshTokenId>, JwtService<TUserId,TRefreshTokenId>>();
+        // services.AddScoped<IHashingService, BCryptHashingService>();
         services.AddScoped<ICurrentUserService, CurrentUserService>();
 
         // HTTP Context Accessor
@@ -31,10 +36,10 @@ public static class ServiceCollectionExtensions
 
     public static IServiceCollection AddJwtAuthentication(this IServiceCollection services, IConfiguration configuration)
     {
-        var jwtSettings = configuration.GetSection("JwtSettings").Get<JwtSettings>();
+        var tokenOptions = configuration.GetSection("TokenOptions").Get<TokenOption>();
         
-        if (jwtSettings == null)
-            throw new InvalidOperationException("JwtSettings configuration is missing");
+        if (tokenOptions == null)
+            throw new InvalidOperationException("TokenOptions configuration is missing");
 
         services.AddAuthentication(options =>
         {
@@ -46,14 +51,52 @@ public static class ServiceCollectionExtensions
             options.TokenValidationParameters = new TokenValidationParameters
             {
                 ValidateIssuerSigningKey = true,
-                IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSettings.SecretKey)),
+                IssuerSigningKey = SecurityKeyHelper.CreateSecurityKey(tokenOptions.SecurityKey),
                 ValidateIssuer = true,
-                ValidIssuer = jwtSettings.Issuer,
+                ValidIssuer = tokenOptions.Issuer,
                 ValidateAudience = true,
-                ValidAudience = jwtSettings.Audience,
+                ValidAudience = tokenOptions.Audience,
                 ValidateLifetime = true,
-                ClockSkew = TimeSpan.Zero
+                ClockSkew = TimeSpan.Zero,
+                RequireExpirationTime = true,
+
             };
+        });
+
+        return services;
+    }
+
+    public static IServiceCollection AddAuthenticatorServices(this IServiceCollection services)
+    {
+        // Email Authenticator
+        services.AddScoped<IEmailAuthenticatorHelper, EmailAuthenticatorHelper>();
+
+        // OTP Authenticator
+        services.AddScoped<IOtpAuthenticatorHelper, OtpNetOtpAuthenticatorHelper>();
+
+        // SMS Authenticator
+        services.AddScoped<ISmsAuthenticatorHelper, SmsAuthenticatorHelper>();
+
+        return services;
+    }
+
+    public static IServiceCollection AddHashingService(this IServiceCollection services, int workFactor = 12)
+    {
+        services.AddScoped<IHashingService>(_ => new BCryptHashingService(workFactor));
+        return services;
+    }
+
+    public static IServiceCollection AddEncryptionService(this IServiceCollection services, IConfiguration configuration)
+    {
+        services.Configure<EncryptionOptions>(configuration.GetSection("EncryptionOptions"));
+
+        services.AddScoped<IEncryptionService>(provider =>
+        {
+            var encryptionOptions = configuration.GetSection("EncryptionOptions").Get<EncryptionOptions>();
+            if (encryptionOptions == null)
+                throw new InvalidOperationException("EncryptionOptions configuration is missing");
+
+            return new AesEncryptionService(encryptionOptions.Key, encryptionOptions.IV);
         });
 
         return services;

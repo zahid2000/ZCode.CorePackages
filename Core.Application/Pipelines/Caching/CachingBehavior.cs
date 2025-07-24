@@ -80,7 +80,7 @@ public class CachingBehavior<TRequest, TResponse> : IPipelineBehavior<TRequest, 
                 cacheKeysInGroup.Add(request.CacheKey);
         }
         else
-            cacheKeysInGroup = new HashSet<string>(new[] { request.CacheKey });
+            cacheKeysInGroup = [request.CacheKey]; // C# 11.0 feature
         byte[] newCacheGroupCache = JsonSerializer.SerializeToUtf8Bytes(cacheKeysInGroup);
 
         byte[]? cacheGroupCacheSlidingExpirationCache = await _cache.GetAsync(

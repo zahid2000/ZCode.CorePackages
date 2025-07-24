@@ -3,6 +3,7 @@ using FluentValidation;
 using FluentValidation.AspNetCore;
 using MediatR;
 using Microsoft.Extensions.DependencyInjection;
+using ZCode.Core.Application.Events;
 using ZCode.Core.Application.Pipelines.Caching;
 using ZCode.Core.Application.Pipelines.Logging;
 using ZCode.Core.Application.Pipelines.Performance;
@@ -25,7 +26,7 @@ public static class ServiceCollectionExtensions
         services.AddTransient(typeof(IPipelineBehavior<,>), typeof(PerformanceBehavior<,>));
 
         // Register domain event publisher
-        services.AddScoped<ZCode.Core.Application.Events.IDomainEventPublisher, ZCode.Core.Application.Events.DomainEventPublisher>();
+        services.AddScoped<IDomainEventPublisher, DomainEventPublisher>();
 
         return services;
     }

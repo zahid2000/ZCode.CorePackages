@@ -40,6 +40,7 @@
 	<ItemGroup>
 		<ProjectReference Include="..\Core.CrossCuttingConcerns.Exception\Core.CrossCuttingConcerns.Exception.csproj" />
 		<ProjectReference Include="..\Core.Persistence\Core.Persistence.csproj" />
+		<ProjectReference Include="..\Core.Security\Core.Security.csproj" />
 	</ItemGroup>
 
 </Project>

@@ -282,12 +282,16 @@ public class OrderCreatedEventHandler : INotificationHandler<OrderCreatedEvent>
 #### 1. Configuration (appsettings.json)
 ```json
 {
-  "JwtSettings": {
-    "SecretKey": "your-super-secret-key-that-is-at-least-32-characters-long",
+  "TokenOptions": {
+    "SecurityKey": "your-super-secret-key-that-is-at-least-32-characters-long",
     "Issuer": "YourApp",
     "Audience": "YourAppUsers",
     "ExpirationMinutes": 60,
-    "RefreshTokenExpirationDays": 7
+    "RefreshTokenTTL": 7
+  },
+  "EncryptionOptions": {
+    "Key": "your-32-character-encryption-key",
+    "IV": "your-16-char-iv"
   }
 }
 ```
@@ -300,8 +304,11 @@ using ZCode.Core.Security.Extensions;
 var builder = WebApplication.CreateBuilder(args);
 
 // Add security services
-builder.Services.AddSecurityServices(builder.Configuration);
+builder.Services.AddSecurityServices<Guid, Guid>(builder.Configuration);
 builder.Services.AddJwtAuthentication(builder.Configuration);
+builder.Services.AddAuthenticatorServices();
+builder.Services.AddHashingService();
+builder.Services.AddEncryptionService(builder.Configuration);
 
 var app = builder.Build();
 
@@ -444,8 +451,858 @@ public class UserService
         return _hashingService.VerifyPassword(password, user.PasswordHash);
     }
 }
+```
+
+### Multi-Factor Authentication (MFA)
+
+#### Email Authenticator
+```csharp
+public class EmailAuthService
+{
+    private readonly IEmailAuthenticatorHelper _emailAuthHelper;
+    private readonly IRepository<EmailAuthenticator<Guid>, Guid> _emailAuthRepository;
+    private readonly IEmailService _emailService;
+
+    public EmailAuthService(
+        IEmailAuthenticatorHelper emailAuthHelper,
+        IRepository<EmailAuthenticator<Guid>, Guid> emailAuthRepository,
+        IEmailService emailService)
+    {
+        _emailAuthHelper = emailAuthHelper;
+        _emailAuthRepository = emailAuthRepository;
+        _emailService = emailService;
+    }
+
+    public async Task<string> SendVerificationEmailAsync(Guid userId, string email)
+    {
+        // Generate activation code
+        var activationCode = await _emailAuthHelper.CreateEmailActivationCode();
+        var activationKey = await _emailAuthHelper.CreateEmailActivationKey();
+
+        // Create or update email authenticator
+        var emailAuth = await _emailAuthRepository.GetAsync(e => e.UserId.Equals(userId));
+        if (emailAuth == null)
+        {
+            emailAuth = new EmailAuthenticator<Guid>(userId, false);
+            await _emailAuthRepository.AddAsync(emailAuth);
+        }
+
+        emailAuth.ActivationKey = activationKey;
+        emailAuth.IsVerified = false;
+        await _emailAuthRepository.UpdateAsync(emailAuth);
+
+        // Send email with activation code
+        await _emailService.SendAsync(email, "Email Verification",
+            $"Your verification code is: {activationCode}");
+
+        return activationKey;
+    }
+
+    public async Task<bool> VerifyEmailAsync(Guid userId, string activationKey)
+    {
+        var emailAuth = await _emailAuthRepository.GetAsync(e =>
+            e.UserId.Equals(userId) && e.ActivationKey == activationKey);
+
+        if (emailAuth == null) return false;
+
+        emailAuth.IsVerified = true;
+        emailAuth.ActivationKey = null;
+        await _emailAuthRepository.UpdateAsync(emailAuth);
+
+        return true;
+    }
+}
+```
+
+#### OTP Authenticator (TOTP)
+```csharp
+public class OtpAuthService
+{
+    private readonly IOtpAuthenticatorHelper _otpHelper;
+    private readonly IRepository<OtpAuthenticator<Guid>, Guid> _otpRepository;
+
+    public OtpAuthService(
+        IOtpAuthenticatorHelper otpHelper,
+        IRepository<OtpAuthenticator<Guid>, Guid> otpRepository)
+    {
+        _otpHelper = otpHelper;
+        _otpRepository = otpRepository;
+    }
+
+    public async Task<OtpSetupResponse> SetupOtpAsync(Guid userId, string accountName, string issuer)
+    {
+        // Generate secret key
+        var secretKey = await _otpHelper.GenerateSecretKey();
+        var secretKeyString = await _otpHelper.ConvertSecretKeyToString(secretKey);
+        var qrCodeUri = await _otpHelper.GenerateQrCodeUri(secretKey, accountName, issuer);
+
+        // Create OTP authenticator
+        var otpAuth = new OtpAuthenticator<Guid>(userId, secretKey, false);
+        await _otpRepository.AddAsync(otpAuth);
+
+        return new OtpSetupResponse
+        {
+            SecretKey = secretKeyString,
+            QrCodeUri = qrCodeUri,
+            ManualEntryKey = secretKeyString
+        };
+    }
+
+    public async Task<bool> VerifyOtpAsync(Guid userId, string code)
+    {
+        var otpAuth = await _otpRepository.GetAsync(o => o.UserId.Equals(userId));
+        if (otpAuth == null) return false;
+
+        var isValid = await _otpHelper.VerifyCode(otpAuth.SecretKey, code);
+
+        if (isValid && !otpAuth.IsVerified)
+        {
+            otpAuth.IsVerified = true;
+            await _otpRepository.UpdateAsync(otpAuth);
+        }
+
+        return isValid;
+    }
+}
+
+public class OtpSetupResponse
+{
+    public string SecretKey { get; set; } = string.Empty;
+    public string QrCodeUri { get; set; } = string.Empty;
+    public string ManualEntryKey { get; set; } = string.Empty;
+}
+```
+
+#### SMS Authenticator
+```csharp
+public class SmsAuthService
+{
+    private readonly ISmsAuthenticatorHelper _smsHelper;
+    private readonly IRepository<SmsAuthenticator<Guid>, Guid> _smsRepository;
+    private readonly ISmsService _smsService;
+
+    public SmsAuthService(
+        ISmsAuthenticatorHelper smsHelper,
+        IRepository<SmsAuthenticator<Guid>, Guid> smsRepository,
+        ISmsService smsService)
+    {
+        _smsHelper = smsHelper;
+        _smsRepository = smsRepository;
+        _smsService = smsService;
+    }
+
+    public async Task SendVerificationSmsAsync(Guid userId, string phoneNumber)
+    {
+        // Generate SMS code
+        var activationCode = await _smsHelper.CreateSmsActivationCode();
+
+        // Create or update SMS authenticator
+        var smsAuth = await _smsRepository.GetAsync(s => s.UserId.Equals(userId));
+        if (smsAuth == null)
+        {
+            smsAuth = new SmsAuthenticator<Guid>(userId, phoneNumber, false);
+            await _smsRepository.AddAsync(smsAuth);
+        }
+
+        smsAuth.SetActivationCode(activationCode);
+        await _smsRepository.UpdateAsync(smsAuth);
+
+        // Send SMS
+        await _smsService.SendAsync(phoneNumber, $"Your verification code is: {activationCode}");
+    }
+
+    public async Task<bool> VerifySmsAsync(Guid userId, string code)
+    {
+        var smsAuth = await _smsRepository.GetAsync(s => s.UserId.Equals(userId));
+        if (smsAuth?.ActivationCode == null) return false;
+
+        // Check if code is expired
+        var isExpired = await _smsHelper.IsCodeExpired(smsAuth.CodeCreatedAt ?? DateTime.UtcNow);
+        if (isExpired) return false;
+
+        // Verify code
+        var isValid = await _smsHelper.VerifyCode(smsAuth.ActivationCode, code);
+
+        if (isValid)
+        {
+            smsAuth.VerifyCode();
+            await _smsRepository.UpdateAsync(smsAuth);
+        }
+
+        return isValid;
+    }
+}
+```
+
+#### Complete MFA Controller Example
+```csharp
+[ApiController]
+[Route("api/[controller]")]
+[Authorize]
+public class MfaController : ControllerBase
+{
+    private readonly EmailAuthService _emailAuthService;
+    private readonly OtpAuthService _otpAuthService;
+    private readonly SmsAuthService _smsAuthService;
+    private readonly ICurrentUserService _currentUserService;
+
+    public MfaController(
+        EmailAuthService emailAuthService,
+        OtpAuthService otpAuthService,
+        SmsAuthService smsAuthService,
+        ICurrentUserService currentUserService)
+    {
+        _emailAuthService = emailAuthService;
+        _otpAuthService = otpAuthService;
+        _smsAuthService = smsAuthService;
+        _currentUserService = currentUserService;
+    }
+
+    [HttpPost("email/send")]
+    public async Task<IActionResult> SendEmailVerification([FromBody] SendEmailVerificationRequest request)
+    {
+        var userId = Guid.Parse(_currentUserService.UserId!);
+        var activationKey = await _emailAuthService.SendVerificationEmailAsync(userId, request.Email);
+
+        return Ok(new { Message = "Verification email sent", ActivationKey = activationKey });
+    }
+
+    [HttpPost("email/verify")]
+    public async Task<IActionResult> VerifyEmail([FromBody] VerifyEmailRequest request)
+    {
+        var userId = Guid.Parse(_currentUserService.UserId!);
+        var isVerified = await _emailAuthService.VerifyEmailAsync(userId, request.ActivationKey);
+
+        return Ok(new { IsVerified = isVerified });
+    }
+
+    [HttpPost("otp/setup")]
+    public async Task<IActionResult> SetupOtp([FromBody] SetupOtpRequest request)
+    {
+        var userId = Guid.Parse(_currentUserService.UserId!);
+        var setup = await _otpAuthService.SetupOtpAsync(userId, request.AccountName, request.Issuer);
+
+        return Ok(setup);
+    }
+
+    [HttpPost("otp/verify")]
+    public async Task<IActionResult> VerifyOtp([FromBody] VerifyOtpRequest request)
+    {
+        var userId = Guid.Parse(_currentUserService.UserId!);
+        var isValid = await _otpAuthService.VerifyOtpAsync(userId, request.Code);
+
+        return Ok(new { IsValid = isValid });
+    }
+
+    [HttpPost("sms/send")]
+    public async Task<IActionResult> SendSmsVerification([FromBody] SendSmsVerificationRequest request)
+    {
+        var userId = Guid.Parse(_currentUserService.UserId!);
+        await _smsAuthService.SendVerificationSmsAsync(userId, request.PhoneNumber);
+
+        return Ok(new { Message = "Verification SMS sent" });
+    }
+
+    [HttpPost("sms/verify")]
+    public async Task<IActionResult> VerifySms([FromBody] VerifySmsRequest request)
+    {
+        var userId = Guid.Parse(_currentUserService.UserId!);
+        var isValid = await _smsAuthService.VerifySmsAsync(userId, request.Code);
+
+        return Ok(new { IsValid = isValid });
+    }
+}
+
+// Request/Response DTOs
+public record SendEmailVerificationRequest(string Email);
+public record VerifyEmailRequest(string ActivationKey);
+public record SetupOtpRequest(string AccountName, string Issuer);
+public record VerifyOtpRequest(string Code);
+public record SendSmsVerificationRequest(string PhoneNumber);
+public record VerifySmsRequest(string Code);
+```
+
+### Authorization Attributes
+
+#### Role-Based Authorization
+```csharp
+[ApiController]
+[Route("api/[controller]")]
+public class AdminController : ControllerBase
+{
+    [HttpGet("users")]
+    [RequireRole("Admin", "SuperAdmin")]
+    public async Task<IActionResult> GetAllUsers()
+    {
+        // Only users with Admin or SuperAdmin role can access this
+        return Ok();
+    }
+
+    [HttpDelete("users/{id}")]
+    [RequireRole("SuperAdmin")]
+    public async Task<IActionResult> DeleteUser(Guid id)
+    {
+        // Only SuperAdmin can delete users
+        return Ok();
+    }
+}
+```
+
+#### Permission-Based Authorization
+```csharp
+[ApiController]
+[Route("api/[controller]")]
+public class DocumentController : ControllerBase
+{
+    [HttpGet]
+    [RequirePermission("documents:read")]
+    public async Task<IActionResult> GetDocuments()
+    {
+        // Only users with documents:read permission can access
+        return Ok();
+    }
+
+    [HttpPost]
+    [RequirePermission("documents:create")]
+    public async Task<IActionResult> CreateDocument([FromBody] CreateDocumentRequest request)
+    {
+        // Only users with documents:create permission can create
+        return Ok();
+    }
+
+    [HttpDelete("{id}")]
+    [RequirePermission("documents:delete", "admin:all")]
+    public async Task<IActionResult> DeleteDocument(Guid id)
+    {
+        // Users need either documents:delete OR admin:all permission
+        return Ok();
+    }
+}
+```
+
+### Data Encryption
+
+#### Encryption Service Usage
+```csharp
+public class UserService
+{
+    private readonly IEncryptionService _encryptionService;
+    private readonly IRepository<User, Guid> _userRepository;
+
+    public UserService(IEncryptionService encryptionService, IRepository<User, Guid> userRepository)
+    {
+        _encryptionService = encryptionService;
+        _userRepository = userRepository;
+    }
+
+    public async Task CreateUserAsync(CreateUserRequest request)
+    {
+        // Encrypt sensitive data before storing
+        var encryptedSsn = _encryptionService.Encrypt(request.SocialSecurityNumber);
+        var encryptedPhone = _encryptionService.Encrypt(request.PhoneNumber);
+
+        var user = new User(
+            Email.Create(request.Email),
+            request.FirstName,
+            request.LastName,
+            encryptedSsn,
+            encryptedPhone
+        );
+
+        await _userRepository.AddAsync(user);
+    }
+
+    public async Task<UserDetailsResponse> GetUserDetailsAsync(Guid userId)
+    {
+        var user = await _userRepository.GetAsync(u => u.Id == userId);
+        if (user == null) return null;
+
+        // Decrypt sensitive data when retrieving
+        var decryptedSsn = _encryptionService.Decrypt(user.EncryptedSsn);
+        var decryptedPhone = _encryptionService.Decrypt(user.EncryptedPhone);
+
+        return new UserDetailsResponse
+        {
+            Id = user.Id,
+            Email = user.Email.Value,
+            FirstName = user.FirstName,
+            LastName = user.LastName,
+            SocialSecurityNumber = decryptedSsn,
+            PhoneNumber = decryptedPhone
+        };
+    }
+}
+```
+
+#### Encryption for Configuration Values
+```csharp
+public class ConfigurationService
+{
+    private readonly IEncryptionService _encryptionService;
+    private readonly IConfiguration _configuration;
+
+    public ConfigurationService(IEncryptionService encryptionService, IConfiguration configuration)
+    {
+        _encryptionService = encryptionService;
+        _configuration = configuration;
+    }
+
+    public string GetDecryptedConnectionString(string name)
+    {
+        var encryptedConnectionString = _configuration.GetConnectionString(name);
+        if (string.IsNullOrEmpty(encryptedConnectionString))
+            return string.Empty;
+
+        return _encryptionService.Decrypt(encryptedConnectionString);
+    }
+
+    public string GetDecryptedApiKey(string keyName)
+    {
+        var encryptedApiKey = _configuration[$"ApiKeys:{keyName}"];
+        if (string.IsNullOrEmpty(encryptedApiKey))
+            return string.Empty;
+
+        return _encryptionService.Decrypt(encryptedApiKey);
+    }
+}
+```
 
 ## Testing Examples
+
+### Security Component Testing
+
+#### 1. JWT Service Testing
+```csharp
+[TestFixture]
+public class JwtServiceTests
+{
+    private JwtService<Guid, Guid> _jwtService;
+    private TokenOption _tokenOptions;
+
+    [SetUp]
+    public void Setup()
+    {
+        _tokenOptions = new TokenOption
+        {
+            SecurityKey = "test-secret-key-that-is-at-least-32-characters-long",
+            Issuer = "TestIssuer",
+            Audience = "TestAudience",
+            ExpirationMinutes = 60,
+            RefreshTokenTTL = 7
+        };
+
+        var options = Options.Create(_tokenOptions);
+        _jwtService = new JwtService<Guid, Guid>(options);
+    }
+
+    [Test]
+    public void Should_Generate_Valid_Access_Token()
+    {
+        // Arrange
+        var claims = new List<Claim>
+        {
+            new(ClaimTypes.NameIdentifier, Guid.NewGuid().ToString()),
+            new(ClaimTypes.Email, "test@example.com"),
+            new(ClaimTypes.Role, "User")
+        };
+
+        // Act
+        var accessToken = _jwtService.GenerateToken(claims);
+
+        // Assert
+        Assert.That(accessToken.Token, Is.Not.Null.And.Not.Empty);
+        Assert.That(accessToken.ExpirationDate, Is.GreaterThan(DateTime.UtcNow));
+    }
+
+    [Test]
+    public void Should_Validate_Token_Successfully()
+    {
+        // Arrange
+        var claims = new List<Claim>
+        {
+            new(ClaimTypes.NameIdentifier, "123"),
+            new(ClaimTypes.Email, "test@example.com")
+        };
+        var accessToken = _jwtService.GenerateToken(claims);
+
+        // Act
+        var principal = _jwtService.ValidateToken(accessToken.Token);
+
+        // Assert
+        Assert.That(principal, Is.Not.Null);
+        Assert.That(principal.FindFirst(ClaimTypes.NameIdentifier)?.Value, Is.EqualTo("123"));
+        Assert.That(principal.FindFirst(ClaimTypes.Email)?.Value, Is.EqualTo("test@example.com"));
+    }
+
+    [Test]
+    public void Should_Return_Null_For_Invalid_Token()
+    {
+        // Act
+        var principal = _jwtService.ValidateToken("invalid-token");
+
+        // Assert
+        Assert.That(principal, Is.Null);
+    }
+}
+```
+
+#### 2. Hashing Service Testing
+```csharp
+[TestFixture]
+public class BCryptHashingServiceTests
+{
+    private BCryptHashingService _hashingService;
+
+    [SetUp]
+    public void Setup()
+    {
+        _hashingService = new BCryptHashingService(workFactor: 4); // Lower work factor for faster tests
+    }
+
+    [Test]
+    public void Should_Hash_Password_Successfully()
+    {
+        // Arrange
+        const string password = "TestPassword123!";
+
+        // Act
+        var hashedPassword = _hashingService.HashPassword(password);
+
+        // Assert
+        Assert.That(hashedPassword, Is.Not.Null.And.Not.Empty);
+        Assert.That(hashedPassword, Is.Not.EqualTo(password));
+        Assert.That(hashedPassword.Length, Is.GreaterThan(50));
+    }
+
+    [Test]
+    public void Should_Verify_Correct_Password()
+    {
+        // Arrange
+        const string password = "TestPassword123!";
+        var hashedPassword = _hashingService.HashPassword(password);
+
+        // Act
+        var isValid = _hashingService.VerifyPassword(password, hashedPassword);
+
+        // Assert
+        Assert.That(isValid, Is.True);
+    }
+
+    [Test]
+    public void Should_Reject_Incorrect_Password()
+    {
+        // Arrange
+        const string password = "TestPassword123!";
+        const string wrongPassword = "WrongPassword123!";
+        var hashedPassword = _hashingService.HashPassword(password);
+
+        // Act
+        var isValid = _hashingService.VerifyPassword(wrongPassword, hashedPassword);
+
+        // Assert
+        Assert.That(isValid, Is.False);
+    }
+
+    [Test]
+    public void Should_Generate_Different_Hashes_For_Same_Password()
+    {
+        // Arrange
+        const string password = "TestPassword123!";
+
+        // Act
+        var hash1 = _hashingService.HashPassword(password);
+        var hash2 = _hashingService.HashPassword(password);
+
+        // Assert
+        Assert.That(hash1, Is.Not.EqualTo(hash2));
+        Assert.That(_hashingService.VerifyPassword(password, hash1), Is.True);
+        Assert.That(_hashingService.VerifyPassword(password, hash2), Is.True);
+    }
+}
+```
+
+#### 3. OTP Authenticator Testing
+```csharp
+[TestFixture]
+public class OtpNetOtpAuthenticatorHelperTests
+{
+    private OtpNetOtpAuthenticatorHelper _otpHelper;
+
+    [SetUp]
+    public void Setup()
+    {
+        _otpHelper = new OtpNetOtpAuthenticatorHelper();
+    }
+
+    [Test]
+    public async Task Should_Generate_Secret_Key()
+    {
+        // Act
+        var secretKey = await _otpHelper.GenerateSecretKey();
+
+        // Assert
+        Assert.That(secretKey, Is.Not.Null);
+        Assert.That(secretKey.Length, Is.GreaterThan(0));
+    }
+
+    [Test]
+    public async Task Should_Convert_Secret_Key_To_String()
+    {
+        // Arrange
+        var secretKey = await _otpHelper.GenerateSecretKey();
+
+        // Act
+        var secretKeyString = await _otpHelper.ConvertSecretKeyToString(secretKey);
+
+        // Assert
+        Assert.That(secretKeyString, Is.Not.Null.And.Not.Empty);
+        Assert.That(secretKeyString.Length, Is.GreaterThan(10));
+    }
+
+    [Test]
+    public async Task Should_Generate_QR_Code_Uri()
+    {
+        // Arrange
+        var secretKey = await _otpHelper.GenerateSecretKey();
+        const string accountName = "test@example.com";
+        const string issuer = "TestApp";
+
+        // Act
+        var qrCodeUri = await _otpHelper.GenerateQrCodeUri(secretKey, accountName, issuer);
+
+        // Assert
+        Assert.That(qrCodeUri, Is.Not.Null.And.Not.Empty);
+        Assert.That(qrCodeUri, Does.StartWith("otpauth://totp/"));
+        Assert.That(qrCodeUri, Does.Contain(accountName));
+        Assert.That(qrCodeUri, Does.Contain(issuer));
+    }
+
+    [Test]
+    public async Task Should_Verify_Valid_Code()
+    {
+        // Arrange
+        var secretKey = await _otpHelper.GenerateSecretKey();
+        var totp = new Totp(secretKey);
+        var validCode = totp.ComputeTotp(DateTime.UtcNow);
+
+        // Act
+        var isValid = await _otpHelper.VerifyCode(secretKey, validCode);
+
+        // Assert
+        Assert.That(isValid, Is.True);
+    }
+
+    [Test]
+    public async Task Should_Reject_Invalid_Code()
+    {
+        // Arrange
+        var secretKey = await _otpHelper.GenerateSecretKey();
+        const string invalidCode = "123456";
+
+        // Act
+        var isValid = await _otpHelper.VerifyCode(secretKey, invalidCode);
+
+        // Assert
+        Assert.That(isValid, Is.False);
+    }
+}
+```
+
+#### 4. Email Authenticator Testing
+```csharp
+[TestFixture]
+public class EmailAuthenticatorHelperTests
+{
+    private EmailAuthenticatorHelper _emailHelper;
+
+    [SetUp]
+    public void Setup()
+    {
+        _emailHelper = new EmailAuthenticatorHelper();
+    }
+
+    [Test]
+    public async Task Should_Create_Email_Activation_Key()
+    {
+        // Act
+        var activationKey = await _emailHelper.CreateEmailActivationKey();
+
+        // Assert
+        Assert.That(activationKey, Is.Not.Null.And.Not.Empty);
+        Assert.That(activationKey.Length, Is.GreaterThan(50));
+    }
+
+    [Test]
+    public async Task Should_Create_Email_Activation_Code()
+    {
+        // Act
+        var activationCode = await _emailHelper.CreateEmailActivationCode();
+
+        // Assert
+        Assert.That(activationCode, Is.Not.Null.And.Not.Empty);
+        Assert.That(activationCode.Length, Is.EqualTo(6));
+        Assert.That(activationCode, Does.Match(@"^\d{6}$"));
+    }
+
+    [Test]
+    public async Task Should_Generate_Different_Activation_Keys()
+    {
+        // Act
+        var key1 = await _emailHelper.CreateEmailActivationKey();
+        var key2 = await _emailHelper.CreateEmailActivationKey();
+
+        // Assert
+        Assert.That(key1, Is.Not.EqualTo(key2));
+    }
+}
+```
+
+#### 5. SMS Authenticator Testing
+```csharp
+[TestFixture]
+public class SmsAuthenticatorHelperTests
+{
+    private SmsAuthenticatorHelper _smsHelper;
+
+    [SetUp]
+    public void Setup()
+    {
+        _smsHelper = new SmsAuthenticatorHelper();
+    }
+
+    [Test]
+    public async Task Should_Create_Sms_Activation_Code()
+    {
+        // Act
+        var activationCode = await _smsHelper.CreateSmsActivationCode();
+
+        // Assert
+        Assert.That(activationCode, Is.Not.Null.And.Not.Empty);
+        Assert.That(activationCode.Length, Is.EqualTo(6));
+        Assert.That(activationCode, Does.Match(@"^\d{6}$"));
+    }
+
+    [Test]
+    public async Task Should_Verify_Correct_Code()
+    {
+        // Arrange
+        const string storedCode = "123456";
+        const string providedCode = "123456";
+
+        // Act
+        var isValid = await _smsHelper.VerifyCode(storedCode, providedCode);
+
+        // Assert
+        Assert.That(isValid, Is.True);
+    }
+
+    [Test]
+    public async Task Should_Reject_Incorrect_Code()
+    {
+        // Arrange
+        const string storedCode = "123456";
+        const string providedCode = "654321";
+
+        // Act
+        var isValid = await _smsHelper.VerifyCode(storedCode, providedCode);
+
+        // Assert
+        Assert.That(isValid, Is.False);
+    }
+
+    [Test]
+    public async Task Should_Detect_Expired_Code()
+    {
+        // Arrange
+        var codeCreatedAt = DateTime.UtcNow.AddMinutes(-10); // 10 minutes ago
+        const int expirationMinutes = 5;
+
+        // Act
+        var isExpired = await _smsHelper.IsCodeExpired(codeCreatedAt, expirationMinutes);
+
+        // Assert
+        Assert.That(isExpired, Is.True);
+    }
+
+    [Test]
+    public async Task Should_Detect_Valid_Code_Not_Expired()
+    {
+        // Arrange
+        var codeCreatedAt = DateTime.UtcNow.AddMinutes(-2); // 2 minutes ago
+        const int expirationMinutes = 5;
+
+        // Act
+        var isExpired = await _smsHelper.IsCodeExpired(codeCreatedAt, expirationMinutes);
+
+        // Assert
+        Assert.That(isExpired, Is.False);
+    }
+}
+```
+
+#### 6. Integration Testing with In-Memory Database
+```csharp
+[TestFixture]
+public class AuthServiceIntegrationTests
+{
+    private DbContext _context;
+    private IRepository<User, Guid> _userRepository;
+    private IRepository<EmailAuthenticator<Guid>, Guid> _emailAuthRepository;
+    private AuthService _authService;
+
+    [SetUp]
+    public void Setup()
+    {
+        var options = new DbContextOptionsBuilder<TestDbContext>()
+            .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
+            .Options;
+
+        _context = new TestDbContext(options);
+        _userRepository = new Repository<User, Guid>(_context);
+        _emailAuthRepository = new Repository<EmailAuthenticator<Guid>, Guid>(_context);
+
+        var hashingService = new BCryptHashingService(4);
+        var emailHelper = new EmailAuthenticatorHelper();
+        var emailService = new Mock<IEmailService>();
+
+        var emailAuthService = new EmailAuthService(emailHelper, _emailAuthRepository, emailService.Object);
+
+        _authService = new AuthService(hashingService, emailAuthService);
+    }
+
+    [TearDown]
+    public void TearDown()
+    {
+        _context.Dispose();
+    }
+
+    [Test]
+    public async Task Should_Register_User_And_Send_Email_Verification()
+    {
+        // Arrange
+        var request = new RegisterRequest
+        {
+            Email = "test@example.com",
+            Password = "TestPassword123!",
+            FirstName = "John",
+            LastName = "Doe"
+        };
+
+        // Act
+        var response = await _authService.RegisterAsync(request);
+        var activationKey = await _authService.SendEmailVerificationAsync(response.UserId, request.Email);
+
+        // Assert
+        Assert.That(response.UserId, Is.Not.EqualTo(Guid.Empty));
+        Assert.That(activationKey, Is.Not.Null.And.Not.Empty);
+
+        var emailAuth = await _emailAuthRepository.GetAsync(e => e.UserId == response.UserId);
+        Assert.That(emailAuth, Is.Not.Null);
+        Assert.That(emailAuth.IsVerified, Is.False);
+        Assert.That(emailAuth.ActivationKey, Is.EqualTo(activationKey));
+    }
+}
+```
 
 ### Unit Testing with Test Builders
 

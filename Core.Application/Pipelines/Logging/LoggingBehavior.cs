@@ -1,14 +1,14 @@
-﻿//using System.Text.Json;
-//using MediatR;
-//using Microsoft.AspNetCore.Http;
-//using ZCode.Core.CrossCuttingConcerns.Logging;
-//using ZCode.Core.CrossCuttingConcerns.Logging.Abstraction;
+﻿// using System.Text.Json;
+// using MediatR;
+// using Microsoft.AspNetCore.Http;
+// using ZCode.Core.CrossCuttingConcerns.Logging;
+// using ZCode.Core.CrossCuttingConcerns.Logging.Abstraction;
 
-//namespace ZCode.Core.Application.Pipelines.Logging;
+// namespace ZCode.Core.Application.Pipelines.Logging;
 
-//public class LoggingBehavior<TRequest, TResponse> : IPipelineBehavior<TRequest, TResponse>
+// public class LoggingBehavior<TRequest, TResponse> : IPipelineBehavior<TRequest, TResponse>
 //    where TRequest : IRequest<TResponse>, ILoggableRequest
-//{
+// {
 //    private readonly IHttpContextAccessor _httpContextAccessor;
 //    private readonly ILogger _logger;
 
@@ -37,4 +37,4 @@
 //        _logger.Information(JsonSerializer.Serialize(logDetail));
 //        return await next();
 //    }
-//}
+// }
