@@ -1,4 +1,19 @@
-# Usage Examples
+# ZCode.CorePackages - Comprehensive Usage Examples
+
+Bu sənəd ZCode.CorePackages library-lərinin bütün xüsusiyyətlərinin istifadəsini ətraflı şəkildə göstərir.
+
+## 📋 Table of Contents
+
+1. [Domain Layer Examples](#domain-layer-examples)
+2. [Application Layer Examples](#application-layer-examples)
+3. [Persistence Layer Examples](#persistence-layer-examples)
+4. [Security Examples](#security-examples)
+5. [Testing Examples](#testing-examples)
+6. [Logging Examples](#logging-examples)
+7. [Background Jobs Examples](#background-jobs-examples)
+8. [Exception Handling Examples](#exception-handling-examples)
+9. [Configuration Examples](#configuration-examples)
+10. [Complete Project Setup](#complete-project-setup)
 
 ## Domain Layer Examples
 
@@ -258,4 +273,2107 @@ public class OrderCreatedEventHandler : INotificationHandler<OrderCreatedEvent>
             cancellationToken);
     }
 }
+```
+
+## Security Examples
+
+### JWT Authentication Setup
+
+#### 1. Configuration (appsettings.json)
+```json
+{
+  "JwtSettings": {
+    "SecretKey": "your-super-secret-key-that-is-at-least-32-characters-long",
+    "Issuer": "YourApp",
+    "Audience": "YourAppUsers",
+    "ExpirationMinutes": 60,
+    "RefreshTokenExpirationDays": 7
+  }
+}
+```
+
+#### 2. Service Registration
+```csharp
+// Program.cs
+using ZCode.Core.Security.Extensions;
+
+var builder = WebApplication.CreateBuilder(args);
+
+// Add security services
+builder.Services.AddSecurityServices(builder.Configuration);
+builder.Services.AddJwtAuthentication(builder.Configuration);
+
+var app = builder.Build();
+
+// Add authentication middleware
+app.UseAuthentication();
+app.UseAuthorization();
+```
+
+#### 3. JWT Service Usage
+```csharp
+public class AuthService
+{
+    private readonly IJwtService _jwtService;
+    private readonly IHashingService _hashingService;
+    private readonly ICurrentUserService _currentUserService;
+
+    public AuthService(IJwtService jwtService, IHashingService hashingService, ICurrentUserService currentUserService)
+    {
+        _jwtService = jwtService;
+        _hashingService = hashingService;
+        _currentUserService = currentUserService;
+    }
+
+    public async Task<LoginResponse> LoginAsync(LoginRequest request)
+    {
+        // Validate user credentials
+        var user = await GetUserByEmailAsync(request.Email);
+        if (user == null || !_hashingService.VerifyPassword(request.Password, user.PasswordHash))
+        {
+            throw new AuthorizationException("Invalid credentials");
+        }
+
+        // Create claims
+        var claims = new List<Claim>
+        {
+            new(ClaimTypes.NameIdentifier, user.Id.ToString()),
+            new(ClaimTypes.Name, user.UserName),
+            new(ClaimTypes.Email, user.Email),
+            new(ClaimTypes.Role, user.Role)
+        };
+
+        // Generate tokens
+        var accessToken = _jwtService.GenerateToken(claims);
+        var refreshToken = _jwtService.GenerateRefreshToken();
+
+        return new LoginResponse
+        {
+            AccessToken = accessToken,
+            RefreshToken = refreshToken,
+            ExpiresAt = _jwtService.GetTokenExpiration(accessToken)
+        };
+    }
+
+    public async Task<RegisterResponse> RegisterAsync(RegisterRequest request)
+    {
+        // Hash password
+        var passwordHash = _hashingService.HashPassword(request.Password);
+
+        // Create user
+        var user = new User(
+            Email.Create(request.Email),
+            request.FirstName,
+            request.LastName
+        );
+        user.SetPassword(passwordHash);
+
+        await _userRepository.AddAsync(user);
+
+        return new RegisterResponse { UserId = user.Id };
+    }
+}
+```
+
+#### 4. Current User Service Usage
+```csharp
+[ApiController]
+[Route("api/[controller]")]
+[Authorize]
+public class ProfileController : ControllerBase
+{
+    private readonly ICurrentUserService _currentUserService;
+
+    public ProfileController(ICurrentUserService currentUserService)
+    {
+        _currentUserService = currentUserService;
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> GetProfile()
+    {
+        var userId = _currentUserService.UserId;
+        var userEmail = _currentUserService.Email;
+        var userRoles = _currentUserService.Roles;
+
+        if (!_currentUserService.IsAuthenticated)
+        {
+            return Unauthorized();
+        }
+
+        if (_currentUserService.IsInRole("Admin"))
+        {
+            // Admin specific logic
+        }
+
+        if (_currentUserService.HasPermission("read:profile"))
+        {
+            // Permission specific logic
+        }
+
+        return Ok(new { UserId = userId, Email = userEmail, Roles = userRoles });
+    }
+}
+```
+
+### Password Hashing
+```csharp
+public class UserService
+{
+    private readonly IHashingService _hashingService;
+
+    public UserService(IHashingService hashingService)
+    {
+        _hashingService = hashingService;
+    }
+
+    public async Task CreateUserAsync(string email, string password)
+    {
+        // Hash password before storing
+        var hashedPassword = _hashingService.HashPassword(password);
+
+        var user = new User(Email.Create(email), hashedPassword);
+        await _userRepository.AddAsync(user);
+    }
+
+    public async Task<bool> ValidatePasswordAsync(string email, string password)
+    {
+        var user = await _userRepository.GetAsync(u => u.Email.Value == email);
+        if (user == null) return false;
+
+        return _hashingService.VerifyPassword(password, user.PasswordHash);
+    }
+}
+
+## Testing Examples
+
+### Unit Testing with Test Builders
+
+#### 1. Entity Builder Usage
+```csharp
+public class UserBuilder : EntityBuilder<User, Guid, UserBuilder>
+{
+    private Email _email = Email.Create("test@example.com");
+    private string _firstName = "John";
+    private string _lastName = "Doe";
+
+    protected override User CreateEntity()
+    {
+        return new User(_email, _firstName, _lastName);
+    }
+
+    public UserBuilder WithEmail(string email)
+    {
+        _email = Email.Create(email);
+        return this;
+    }
+
+    public UserBuilder WithName(string firstName, string lastName)
+    {
+        _firstName = firstName;
+        _lastName = lastName;
+        return this;
+    }
+}
+
+// Usage in tests
+[Test]
+public void Should_Create_User_With_Valid_Email()
+{
+    // Arrange
+    var user = new UserBuilder()
+        .WithEmail("john.doe@example.com")
+        .WithName("John", "Doe")
+        .WithCreatedDate(DateTime.UtcNow)
+        .Build();
+
+    // Act & Assert
+    Assert.That(user.Email.Value, Is.EqualTo("john.doe@example.com"));
+    Assert.That(user.FirstName, Is.EqualTo("John"));
+    Assert.That(user.LastName, Is.EqualTo("Doe"));
+}
+```
+
+#### 2. In-Memory Database Testing
+```csharp
+[TestFixture]
+public class UserRepositoryTests
+{
+    private ApplicationDbContext _context;
+    private IAsyncRepository<User, Guid> _userRepository;
+
+    [SetUp]
+    public void Setup()
+    {
+        _context = InMemoryDbContextFactory.Create<ApplicationDbContext>();
+        _userRepository = new EfRepositoryBase<User, Guid, ApplicationDbContext>(_context);
+    }
+
+    [TearDown]
+    public void TearDown()
+    {
+        _context.Dispose();
+    }
+
+    [Test]
+    public async Task Should_Add_User_Successfully()
+    {
+        // Arrange
+        var user = new UserBuilder()
+            .WithEmail("test@example.com")
+            .Build();
+
+        // Act
+        var result = await _userRepository.AddAsync(user);
+
+        // Assert
+        Assert.That(result.Id, Is.Not.EqualTo(Guid.Empty));
+
+        var savedUser = await _userRepository.GetAsync(u => u.Id == result.Id);
+        Assert.That(savedUser, Is.Not.Null);
+        Assert.That(savedUser.Email.Value, Is.EqualTo("test@example.com"));
+    }
+
+    [Test]
+    public async Task Should_Get_Users_With_Specification()
+    {
+        // Arrange
+        var activeUser = new UserBuilder().WithEmail("active@example.com").Build();
+        var inactiveUser = new UserBuilder().WithEmail("inactive@example.com").Build();
+        inactiveUser.Deactivate();
+
+        await _userRepository.AddAsync(activeUser);
+        await _userRepository.AddAsync(inactiveUser);
+
+        // Act
+        var activeUsers = await _userRepository.GetListBySpecificationAsync(
+            new ActiveUserSpecification()
+        );
+
+        // Assert
+        Assert.That(activeUsers.Items.Count, Is.EqualTo(1));
+        Assert.That(activeUsers.Items.First().Email.Value, Is.EqualTo("active@example.com"));
+    }
+}
+```
+
+#### 3. Integration Testing with Seeded Data
+```csharp
+[TestFixture]
+public class UserServiceIntegrationTests
+{
+    private ApplicationDbContext _context;
+    private UserService _userService;
+
+    [SetUp]
+    public void Setup()
+    {
+        _context = InMemoryDbContextFactory.CreateWithData<ApplicationDbContext>(SeedTestData);
+        var userRepository = new EfRepositoryBase<User, Guid, ApplicationDbContext>(_context);
+        var hashingService = new BCryptHashingService();
+        _userService = new UserService(userRepository, hashingService);
+    }
+
+    private void SeedTestData(ApplicationDbContext context)
+    {
+        var users = new[]
+        {
+            new UserBuilder().WithEmail("user1@example.com").Build(),
+            new UserBuilder().WithEmail("user2@example.com").Build(),
+            new UserBuilder().WithEmail("user3@example.com").Build()
+        };
+
+        context.Users.AddRange(users);
+    }
+
+    [Test]
+    public async Task Should_Get_All_Active_Users()
+    {
+        // Act
+        var users = await _userService.GetActiveUsersAsync();
+
+        // Assert
+        Assert.That(users.Count, Is.EqualTo(3));
+    }
+}
+
+## Logging Examples
+
+### Structured Logging Setup
+
+#### 1. Program.cs Configuration
+```csharp
+using ZCode.Core.Logging.Extensions;
+using Serilog;
+
+var builder = WebApplication.CreateBuilder(args);
+
+// Add Serilog
+builder.Host.UseSerilogLogging(builder.Configuration);
+
+var app = builder.Build();
+
+// Log application startup
+Log.Information("Application starting up");
+
+try
+{
+    app.Run();
+}
+catch (Exception ex)
+{
+    Log.Fatal(ex, "Application terminated unexpectedly");
+}
+finally
+{
+    Log.CloseAndFlush();
+}
+```
+
+#### 2. appsettings.json Configuration
+```json
+{
+  "Serilog": {
+    "MinimumLevel": {
+      "Default": "Information",
+      "Override": {
+        "Microsoft": "Warning",
+        "System": "Warning"
+      }
+    },
+    "WriteTo": [
+      {
+        "Name": "Console",
+        "Args": {
+          "outputTemplate": "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj} {Properties:j}{NewLine}{Exception}"
+        }
+      },
+      {
+        "Name": "File",
+        "Args": {
+          "path": "logs/log-.txt",
+          "rollingInterval": "Day",
+          "retainedFileCountLimit": 30,
+          "outputTemplate": "[{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} {Level:u3}] {Message:lj} {Properties:j}{NewLine}{Exception}"
+        }
+      }
+    ],
+    "Enrich": ["FromLogContext", "WithEnvironmentName", "WithProcessId", "WithThreadId"]
+  }
+}
+```
+
+#### 3. Service Logging
+```csharp
+public class UserService
+{
+    private readonly ILogger<UserService> _logger;
+    private readonly IAsyncRepository<User, Guid> _userRepository;
+
+    public UserService(ILogger<UserService> logger, IAsyncRepository<User, Guid> userRepository)
+    {
+        _logger = logger;
+        _userRepository = userRepository;
+    }
+
+    public async Task<User> CreateUserAsync(CreateUserRequest request)
+    {
+        _logger.LogInformation("Creating user with email {Email}", request.Email);
+
+        try
+        {
+            var user = new User(Email.Create(request.Email), request.FirstName, request.LastName);
+            var result = await _userRepository.AddAsync(user);
+
+            _logger.LogInformation("User created successfully with ID {UserId}", result.Id);
+            return result;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to create user with email {Email}", request.Email);
+            throw;
+        }
+    }
+
+    public async Task<IPaginate<User>> GetUsersAsync(int page, int size)
+    {
+        using var scope = _logger.BeginScope("Getting users page {Page} size {Size}", page, size);
+
+        _logger.LogDebug("Fetching users from repository");
+
+        var users = await _userRepository.GetListAsync(
+            index: page,
+            size: size,
+            orderBy: q => q.OrderBy(u => u.CreatedDate)
+        );
+
+        _logger.LogInformation("Retrieved {Count} users out of {Total}",
+            users.Items.Count, users.Count);
+
+        return users;
+    }
+}
+
+## Background Jobs Examples
+
+### Hangfire Integration
+
+#### 1. Service Registration
+```csharp
+// Program.cs
+using ZCode.Core.BackgroundJobs.Extensions;
+
+var builder = WebApplication.CreateBuilder(args);
+
+// Add background jobs
+var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
+builder.Services.AddBackgroundJobs(connectionString);
+
+var app = builder.Build();
+
+// Add Hangfire dashboard (optional)
+app.UseHangfireDashboard("/hangfire");
+```
+
+#### 2. Background Job Service Usage
+```csharp
+public class EmailService
+{
+    private readonly IBackgroundJobService _backgroundJobService;
+    private readonly ILogger<EmailService> _logger;
+
+    public EmailService(IBackgroundJobService backgroundJobService, ILogger<EmailService> logger)
+    {
+        _backgroundJobService = backgroundJobService;
+        _logger = logger;
+    }
+
+    // Fire and forget job
+    public void SendWelcomeEmail(string email, string userName)
+    {
+        _backgroundJobService.Enqueue(() => ProcessWelcomeEmail(email, userName));
+    }
+
+    // Delayed job
+    public void SendReminderEmail(string email, TimeSpan delay)
+    {
+        _backgroundJobService.Schedule(() => ProcessReminderEmail(email), delay);
+    }
+
+    // Recurring job
+    public void SetupDailyReports()
+    {
+        _backgroundJobService.AddOrUpdateRecurringJob(
+            "daily-reports",
+            () => GenerateDailyReport(),
+            "0 9 * * *" // Every day at 9 AM
+        );
+    }
+
+    // Background job methods
+    public async Task ProcessWelcomeEmail(string email, string userName)
+    {
+        _logger.LogInformation("Sending welcome email to {Email}", email);
+
+        // Email sending logic
+        await Task.Delay(1000); // Simulate email sending
+
+        _logger.LogInformation("Welcome email sent successfully to {Email}", email);
+    }
+
+    public async Task ProcessReminderEmail(string email)
+    {
+        _logger.LogInformation("Sending reminder email to {Email}", email);
+
+        // Email sending logic
+        await Task.Delay(1000);
+
+        _logger.LogInformation("Reminder email sent successfully to {Email}", email);
+    }
+
+    public async Task GenerateDailyReport()
+    {
+        _logger.LogInformation("Generating daily report");
+
+        // Report generation logic
+        await Task.Delay(5000);
+
+        _logger.LogInformation("Daily report generated successfully");
+    }
+}
+```
+
+#### 3. Controller Usage
+```csharp
+[ApiController]
+[Route("api/[controller]")]
+public class UsersController : ControllerBase
+{
+    private readonly UserService _userService;
+    private readonly EmailService _emailService;
+
+    public UsersController(UserService userService, EmailService emailService)
+    {
+        _userService = userService;
+        _emailService = emailService;
+    }
+
+    [HttpPost]
+    public async Task<IActionResult> CreateUser(CreateUserRequest request)
+    {
+        var user = await _userService.CreateUserAsync(request);
+
+        // Send welcome email in background
+        _emailService.SendWelcomeEmail(user.Email.Value, user.FirstName);
+
+        // Send reminder email after 24 hours
+        _emailService.SendReminderEmail(user.Email.Value, TimeSpan.FromHours(24));
+
+        return Ok(new { UserId = user.Id });
+    }
+}
+
+## Exception Handling Examples
+
+### Global Exception Handling
+
+#### 1. Middleware Setup
+```csharp
+// Program.cs
+using ZCode.Core.CrossCuttingConcerns.Exception.WebApi.Extensions;
+
+var builder = WebApplication.CreateBuilder(args);
+
+var app = builder.Build();
+
+// Add global exception handling middleware
+app.ConfigureCustomExceptionMiddleware();
+```
+
+#### 2. Custom Exceptions Usage
+```csharp
+public class UserService
+{
+    public async Task<User> GetUserByIdAsync(Guid id)
+    {
+        var user = await _userRepository.GetAsync(u => u.Id == id);
+
+        if (user == null)
+        {
+            throw new NotFoundException($"User with ID {id} not found");
+        }
+
+        return user;
+    }
+
+    public async Task<User> CreateUserAsync(CreateUserRequest request)
+    {
+        // Business rule validation
+        var existingUser = await _userRepository.GetAsync(u => u.Email.Value == request.Email);
+        if (existingUser != null)
+        {
+            throw new BusinessException("User with this email already exists");
+        }
+
+        // Validation
+        if (string.IsNullOrWhiteSpace(request.FirstName))
+        {
+            throw new ValidationException(new[]
+            {
+                new ValidationExceptionModel
+                {
+                    Property = nameof(request.FirstName),
+                    Errors = new[] { "First name is required" }
+                }
+            });
+        }
+
+        var user = new User(Email.Create(request.Email), request.FirstName, request.LastName);
+        return await _userRepository.AddAsync(user);
+    }
+}
+```
+
+#### 3. Authorization Exceptions
+```csharp
+[ApiController]
+[Route("api/[controller]")]
+[Authorize]
+public class AdminController : ControllerBase
+{
+    private readonly ICurrentUserService _currentUserService;
+
+    [HttpGet("users")]
+    public async Task<IActionResult> GetAllUsers()
+    {
+        if (!_currentUserService.IsInRole("Admin"))
+        {
+            throw new AuthorizationException("You don't have permission to access this resource");
+        }
+
+        // Admin logic here
+        return Ok();
+    }
+}
+```
+
+## Complete Project Setup
+
+### 1. Project Structure
+```
+YourProject/
+├── src/
+│   ├── YourProject.Domain/
+│   ├── YourProject.Application/
+│   ├── YourProject.Infrastructure/
+│   ├── YourProject.WebApi/
+│   └── YourProject.Tests/
+├── docs/
+└── README.md
+```
+
+### 2. Package Installation
+```bash
+# Domain project
+dotnet add package ZCode.Core.Domain
+
+# Application project
+dotnet add package ZCode.Core.Application
+
+# Infrastructure project
+dotnet add package ZCode.Core.Persistence
+dotnet add package ZCode.Core.Security
+dotnet add package ZCode.Core.Logging
+dotnet add package ZCode.Core.BackgroundJobs
+
+# WebApi project
+dotnet add package ZCode.Core.CrossCuttingConcerns.Exception.WebApi
+
+# Test project
+dotnet add package ZCode.Core.Testing
+```
+
+### 3. Complete Program.cs Setup
+```csharp
+using ZCode.Core.Application.Extensions;
+using ZCode.Core.Security.Extensions;
+using ZCode.Core.Logging.Extensions;
+using ZCode.Core.BackgroundJobs.Extensions;
+using ZCode.Core.CrossCuttingConcerns.Exception.WebApi.Extensions;
+using YourProject.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
+using Serilog;
+
+var builder = WebApplication.CreateBuilder(args);
+
+// Add Serilog
+builder.Host.UseSerilogLogging(builder.Configuration);
+
+// Add services to the container
+builder.Services.AddControllers();
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen();
+
+// Add Core services
+builder.Services.AddApplicationServices(typeof(Program).Assembly);
+
+// Add Database
+var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
+builder.Services.AddDbContext<ApplicationDbContext>(options =>
+    options.UseSqlServer(connectionString)
+           .AddInterceptors(
+               serviceProvider.GetRequiredService<AuditableEntitySaveChangesInterceptors<Guid>>(),
+               serviceProvider.GetRequiredService<DomainEventsInterceptor>()
+           ));
+
+builder.Services.AddPersistenceServices<ApplicationDbContext>();
+
+// Add Security
+builder.Services.AddSecurityServices(builder.Configuration);
+builder.Services.AddJwtAuthentication(builder.Configuration);
+
+// Add Background Jobs
+builder.Services.AddBackgroundJobs(connectionString);
+
+var app = builder.Build();
+
+// Configure the HTTP request pipeline
+if (app.Environment.IsDevelopment())
+{
+    app.UseSwagger();
+    app.UseSwaggerUI();
+    app.UseHangfireDashboard("/hangfire");
+}
+
+// Add global exception handling
+app.ConfigureCustomExceptionMiddleware();
+
+app.UseHttpsRedirection();
+
+app.UseAuthentication();
+app.UseAuthorization();
+
+app.MapControllers();
+
+// Log application startup
+Log.Information("Application starting up");
+
+try
+{
+    app.Run();
+}
+catch (Exception ex)
+{
+    Log.Fatal(ex, "Application terminated unexpectedly");
+}
+finally
+{
+    Log.CloseAndFlush();
+}
+```
+
+### 4. Complete appsettings.json
+```json
+{
+  "ConnectionStrings": {
+    "DefaultConnection": "Server=(localdb)\\mssqllocaldb;Database=YourProjectDb;Trusted_Connection=true;MultipleActiveResultSets=true"
+  },
+  "JwtSettings": {
+    "SecretKey": "your-super-secret-key-that-is-at-least-32-characters-long",
+    "Issuer": "YourApp",
+    "Audience": "YourAppUsers",
+    "ExpirationMinutes": 60,
+    "RefreshTokenExpirationDays": 7
+  },
+  "Serilog": {
+    "MinimumLevel": {
+      "Default": "Information",
+      "Override": {
+        "Microsoft": "Warning",
+        "System": "Warning",
+        "Hangfire": "Information"
+      }
+    },
+    "WriteTo": [
+      {
+        "Name": "Console",
+        "Args": {
+          "outputTemplate": "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj} {Properties:j}{NewLine}{Exception}"
+        }
+      },
+      {
+        "Name": "File",
+        "Args": {
+          "path": "logs/log-.txt",
+          "rollingInterval": "Day",
+          "retainedFileCountLimit": 30,
+          "outputTemplate": "[{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} {Level:u3}] {Message:lj} {Properties:j}{NewLine}{Exception}"
+        }
+      }
+    ],
+    "Enrich": ["FromLogContext", "WithEnvironmentName", "WithProcessId", "WithThreadId"]
+  },
+  "Logging": {
+    "LogLevel": {
+      "Default": "Information",
+      "Microsoft.AspNetCore": "Warning"
+    }
+  },
+  "AllowedHosts": "*"
+}
+```
+
+### 5. DbContext Configuration
+```csharp
+using Microsoft.EntityFrameworkCore;
+using ZCode.Core.Persistence.Extensions;
+using ZCode.Core.Domain.Entities;
+using YourProject.Domain.Entities;
+
+public class ApplicationDbContext : DbContext
+{
+    public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options) : base(options)
+    {
+    }
+
+    public DbSet<User> Users { get; set; }
+    public DbSet<Order> Orders { get; set; }
+
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        // Register all entities that implement IEntity<Guid>
+        modelBuilder.RegisterAllEntities<IEntity<Guid>>(typeof(User).Assembly);
+
+        // Apply soft delete query filter
+        modelBuilder.ApplySoftDeleteQueryFilter();
+
+        // Apply configurations
+        modelBuilder.ApplyConfigurationsFromAssembly(typeof(ApplicationDbContext).Assembly);
+
+        base.OnModelCreating(modelBuilder);
+    }
+}
+```
+
+## Advanced Examples
+
+### 1. Complex Domain Entity with All Features
+```csharp
+public class Order : AuditableEntity<Guid>
+{
+    public string OrderNumber { get; private set; }
+    public Guid CustomerId { get; private set; }
+    public OrderStatus Status { get; private set; }
+    public decimal TotalAmount { get; private set; }
+    public List<OrderItem> Items { get; private set; } = new();
+
+    private Order() { } // EF Core
+
+    public Order(string orderNumber, Guid customerId)
+    {
+        OrderNumber = orderNumber;
+        CustomerId = customerId;
+        Status = OrderStatus.Pending;
+        TotalAmount = 0;
+
+        // Pre-save event for validation
+        AddDomainEvent(new OrderCreatedEvent(Id, CustomerId, OrderNumber));
+    }
+
+    public void AddItem(Guid productId, int quantity, decimal unitPrice)
+    {
+        var item = new OrderItem(productId, quantity, unitPrice);
+        Items.Add(item);
+        RecalculateTotal();
+
+        // Queue event for inventory check
+        AddDomainEvent(new OrderItemAddedEvent(Id, productId, quantity));
+    }
+
+    public void Confirm()
+    {
+        if (Status != OrderStatus.Pending)
+            throw new BusinessException("Only pending orders can be confirmed");
+
+        Status = OrderStatus.Confirmed;
+
+        // Post-save event for notifications
+        AddDomainEvent(new OrderConfirmedEvent(Id, CustomerId, TotalAmount));
+    }
+
+    private void RecalculateTotal()
+    {
+        TotalAmount = Items.Sum(i => i.Quantity * i.UnitPrice);
+    }
+}
+
+// Domain Events
+public class OrderCreatedEvent : DomainEvent, IPreSaveDomainEvent
+{
+    public Guid OrderId { get; }
+    public Guid CustomerId { get; }
+    public string OrderNumber { get; }
+
+    public OrderCreatedEvent(Guid orderId, Guid customerId, string orderNumber)
+    {
+        OrderId = orderId;
+        CustomerId = customerId;
+        OrderNumber = orderNumber;
+    }
+}
+
+public class OrderConfirmedEvent : DomainEvent, IPostSaveDomainEvent
+{
+    public Guid OrderId { get; }
+    public Guid CustomerId { get; }
+    public decimal TotalAmount { get; }
+
+    public OrderConfirmedEvent(Guid orderId, Guid customerId, decimal totalAmount)
+    {
+        OrderId = orderId;
+        CustomerId = customerId;
+        TotalAmount = totalAmount;
+    }
+}
+```
+
+### 2. Advanced CQRS with Caching and Validation
+```csharp
+// Command with validation and transaction
+public class CreateOrderCommand : IRequest<Result<OrderDto>>, ITransactionalRequest, ICachableRequest
+{
+    public Guid CustomerId { get; set; }
+    public List<OrderItemDto> Items { get; set; } = new();
+
+    // Caching configuration
+    public bool BypassCache { get; set; }
+    public string CacheKey => $"Order-Customer-{CustomerId}";
+    public string? CacheGroupKey => "Orders";
+    public TimeSpan? SlidingExpiration => TimeSpan.FromMinutes(30);
+}
+
+// Command validator
+public class CreateOrderCommandValidator : AbstractValidator<CreateOrderCommand>
+{
+    public CreateOrderCommandValidator()
+    {
+        RuleFor(x => x.CustomerId)
+            .NotEmpty()
+            .WithMessage("Customer ID is required");
+
+        RuleFor(x => x.Items)
+            .NotEmpty()
+            .WithMessage("Order must have at least one item");
+
+        RuleForEach(x => x.Items)
+            .SetValidator(new OrderItemDtoValidator());
+    }
+}
+
+// Command handler with domain events
+public class CreateOrderCommandHandler : IRequestHandler<CreateOrderCommand, Result<OrderDto>>
+{
+    private readonly IAsyncRepository<Order, Guid> _orderRepository;
+    private readonly IAsyncRepository<Customer, Guid> _customerRepository;
+    private readonly IMapperService _mapper;
+    private readonly IDomainEventPublisher _eventPublisher;
+
+    public CreateOrderCommandHandler(
+        IAsyncRepository<Order, Guid> orderRepository,
+        IAsyncRepository<Customer, Guid> customerRepository,
+        IMapperService mapper,
+        IDomainEventPublisher eventPublisher)
+    {
+        _orderRepository = orderRepository;
+        _customerRepository = customerRepository;
+        _mapper = mapper;
+        _eventPublisher = eventPublisher;
+    }
+
+    public async Task<Result<OrderDto>> Handle(CreateOrderCommand request, CancellationToken cancellationToken)
+    {
+        // Validate customer exists
+        var customer = await _customerRepository.GetAsync(c => c.Id == request.CustomerId);
+        if (customer == null)
+        {
+            return Result.Failure<OrderDto>("Customer not found");
+        }
+
+        // Generate order number
+        var orderNumber = await GenerateOrderNumberAsync();
+
+        // Create order
+        var order = new Order(orderNumber, request.CustomerId);
+
+        // Add items
+        foreach (var itemDto in request.Items)
+        {
+            order.AddItem(itemDto.ProductId, itemDto.Quantity, itemDto.UnitPrice);
+        }
+
+        // Save order
+        var savedOrder = await _orderRepository.AddAsync(order, cancellationToken);
+
+        // Queue additional events
+        await _eventPublisher.QueueEventAsync(
+            new OrderCreatedNotificationEvent(savedOrder.Id, customer.Email.Value),
+            cancellationToken);
+
+        var orderDto = _mapper.Map<OrderDto>(savedOrder);
+        return Result.Success(orderDto);
+    }
+
+    private async Task<string> GenerateOrderNumberAsync()
+    {
+        var count = await _orderRepository.CountAsync();
+        return $"ORD-{DateTime.UtcNow:yyyyMMdd}-{count + 1:D6}";
+    }
+}
+```
+
+### 3. Advanced Repository with Specifications
+```csharp
+// Complex specification
+public class OrdersByCustomerAndStatusSpecification : Specification<Order>
+{
+    private readonly Guid _customerId;
+    private readonly OrderStatus _status;
+    private readonly DateTime? _fromDate;
+    private readonly DateTime? _toDate;
+
+    public OrdersByCustomerAndStatusSpecification(
+        Guid customerId,
+        OrderStatus status,
+        DateTime? fromDate = null,
+        DateTime? toDate = null)
+    {
+        _customerId = customerId;
+        _status = status;
+        _fromDate = fromDate;
+        _toDate = toDate;
+    }
+
+    public override Expression<Func<Order, bool>> ToExpression()
+    {
+        var expression = PredicateBuilder.New<Order>(true);
+
+        expression = expression.And(o => o.CustomerId == _customerId);
+        expression = expression.And(o => o.Status == _status);
+
+        if (_fromDate.HasValue)
+            expression = expression.And(o => o.CreatedDate >= _fromDate.Value);
+
+        if (_toDate.HasValue)
+            expression = expression.And(o => o.CreatedDate <= _toDate.Value);
+
+        return expression;
+    }
+}
+
+// Repository usage with complex queries
+public class OrderService
+{
+    private readonly IAsyncRepository<Order, Guid> _orderRepository;
+
+    public async Task<IPaginate<Order>> GetCustomerOrdersAsync(
+        Guid customerId,
+        OrderStatus? status = null,
+        DateTime? fromDate = null,
+        DateTime? toDate = null,
+        int page = 0,
+        int size = 10)
+    {
+        if (status.HasValue)
+        {
+            var specification = new OrdersByCustomerAndStatusSpecification(
+                customerId, status.Value, fromDate, toDate);
+
+            return await _orderRepository.GetListBySpecificationAsync(
+                specification,
+                orderBy: q => q.OrderByDescending(o => o.CreatedDate),
+                include: q => q.Include(o => o.Items),
+                index: page,
+                size: size
+            );
+        }
+
+        // Use dynamic query for flexible filtering
+        var dynamicQuery = new DynamicQuery
+        {
+            Filter = new Filter
+            {
+                Logic = "and",
+                Filters = new List<Filter>
+                {
+                    new() { Field = "CustomerId", Operator = "eq", Value = customerId.ToString() }
+                }
+            },
+            Sort = new[]
+            {
+                new Sort { Field = "CreatedDate", Dir = "desc" }
+            }
+        };
+
+        if (fromDate.HasValue)
+        {
+            dynamicQuery.Filter.Filters.Add(new Filter
+            {
+                Field = "CreatedDate",
+                Operator = "gte",
+                Value = fromDate.Value.ToString("yyyy-MM-dd")
+            });
+        }
+
+        return await _orderRepository.GetListByDynamicAsync(
+            dynamicQuery,
+            include: q => q.Include(o => o.Items),
+            index: page,
+            size: size
+        );
+    }
+}
+```
+
+### 4. Advanced Event Handling with Nested Events
+```csharp
+// Event handler that triggers multiple nested events
+public class OrderConfirmedEventHandler : INotificationHandler<OrderConfirmedEvent>
+{
+    private readonly IDomainEventPublisher _eventPublisher;
+    private readonly IAsyncRepository<Customer, Guid> _customerRepository;
+    private readonly IBackgroundJobService _backgroundJobService;
+    private readonly ILogger<OrderConfirmedEventHandler> _logger;
+
+    public OrderConfirmedEventHandler(
+        IDomainEventPublisher eventPublisher,
+        IAsyncRepository<Customer, Guid> customerRepository,
+        IBackgroundJobService backgroundJobService,
+        ILogger<OrderConfirmedEventHandler> logger)
+    {
+        _eventPublisher = eventPublisher;
+        _customerRepository = customerRepository;
+        _backgroundJobService = backgroundJobService;
+        _logger = logger;
+    }
+
+    public async Task Handle(OrderConfirmedEvent notification, CancellationToken cancellationToken)
+    {
+        _logger.LogInformation("Processing order confirmed event for order {OrderId}", notification.OrderId);
+
+        try
+        {
+            // Get customer details
+            var customer = await _customerRepository.GetAsync(c => c.Id == notification.CustomerId);
+            if (customer == null)
+            {
+                _logger.LogWarning("Customer {CustomerId} not found for order {OrderId}",
+                    notification.CustomerId, notification.OrderId);
+                return;
+            }
+
+            // Queue immediate events
+            await _eventPublisher.QueueEventAsync(
+                new UpdateCustomerStatisticsEvent(notification.CustomerId, notification.TotalAmount),
+                cancellationToken);
+
+            await _eventPublisher.QueueEventAsync(
+                new UpdateInventoryEvent(notification.OrderId),
+                cancellationToken);
+
+            // Schedule background jobs
+            _backgroundJobService.Enqueue(() =>
+                SendOrderConfirmationEmail(customer.Email.Value, notification.OrderId));
+
+            _backgroundJobService.Schedule(() =>
+                SendOrderReminderEmail(customer.Email.Value, notification.OrderId),
+                TimeSpan.FromHours(24));
+
+            // Check if customer qualifies for loyalty program
+            if (await IsEligibleForLoyaltyProgram(customer.Id))
+            {
+                await _eventPublisher.QueueEventAsync(
+                    new CustomerLoyaltyEligibleEvent(customer.Id),
+                    cancellationToken);
+            }
+
+            _logger.LogInformation("Order confirmed event processed successfully for order {OrderId}",
+                notification.OrderId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error processing order confirmed event for order {OrderId}",
+                notification.OrderId);
+            throw;
+        }
+    }
+
+    private async Task<bool> IsEligibleForLoyaltyProgram(Guid customerId)
+    {
+        // Complex business logic to check loyalty eligibility
+        var customerOrders = await _customerRepository.Query()
+            .Where(c => c.Id == customerId)
+            .SelectMany(c => c.Orders)
+            .Where(o => o.Status == OrderStatus.Confirmed)
+            .ToListAsync();
+
+        var totalSpent = customerOrders.Sum(o => o.TotalAmount);
+        var orderCount = customerOrders.Count;
+
+        return totalSpent >= 1000 || orderCount >= 10;
+    }
+
+    public async Task SendOrderConfirmationEmail(string email, Guid orderId)
+    {
+        _logger.LogInformation("Sending order confirmation email to {Email} for order {OrderId}",
+            email, orderId);
+
+        // Email sending logic
+        await Task.Delay(1000);
+
+        _logger.LogInformation("Order confirmation email sent successfully");
+    }
+
+    public async Task SendOrderReminderEmail(string email, Guid orderId)
+    {
+        _logger.LogInformation("Sending order reminder email to {Email} for order {OrderId}",
+            email, orderId);
+
+        // Email sending logic
+        await Task.Delay(1000);
+
+        _logger.LogInformation("Order reminder email sent successfully");
+    }
+}
+```
+
+### 5. Advanced Testing Scenarios
+```csharp
+[TestFixture]
+public class OrderServiceIntegrationTests
+{
+    private ApplicationDbContext _context;
+    private OrderService _orderService;
+    private Mock<IDomainEventPublisher> _mockEventPublisher;
+    private Mock<IBackgroundJobService> _mockBackgroundJobService;
+
+    [SetUp]
+    public void Setup()
+    {
+        _context = InMemoryDbContextFactory.CreateWithData<ApplicationDbContext>(SeedTestData);
+
+        var orderRepository = new EfRepositoryBase<Order, Guid, ApplicationDbContext>(_context);
+        var customerRepository = new EfRepositoryBase<Customer, Guid, ApplicationDbContext>(_context);
+
+        _mockEventPublisher = new Mock<IDomainEventPublisher>();
+        _mockBackgroundJobService = new Mock<IBackgroundJobService>();
+
+        _orderService = new OrderService(
+            orderRepository,
+            customerRepository,
+            _mockEventPublisher.Object,
+            _mockBackgroundJobService.Object);
+    }
+
+    private void SeedTestData(ApplicationDbContext context)
+    {
+        var customer = new CustomerBuilder()
+            .WithEmail("customer@example.com")
+            .WithName("John", "Doe")
+            .Build();
+
+        var orders = new[]
+        {
+            new OrderBuilder()
+                .WithCustomerId(customer.Id)
+                .WithStatus(OrderStatus.Confirmed)
+                .WithCreatedDate(DateTime.UtcNow.AddDays(-10))
+                .Build(),
+            new OrderBuilder()
+                .WithCustomerId(customer.Id)
+                .WithStatus(OrderStatus.Pending)
+                .WithCreatedDate(DateTime.UtcNow.AddDays(-5))
+                .Build()
+        };
+
+        context.Customers.Add(customer);
+        context.Orders.AddRange(orders);
+    }
+
+    [Test]
+    public async Task Should_Create_Order_And_Trigger_Events()
+    {
+        // Arrange
+        var customer = await _context.Customers.FirstAsync();
+        var command = new CreateOrderCommand
+        {
+            CustomerId = customer.Id,
+            Items = new List<OrderItemDto>
+            {
+                new() { ProductId = Guid.NewGuid(), Quantity = 2, UnitPrice = 50.00m },
+                new() { ProductId = Guid.NewGuid(), Quantity = 1, UnitPrice = 30.00m }
+            }
+        };
+
+        // Act
+        var result = await _orderService.CreateOrderAsync(command);
+
+        // Assert
+        Assert.That(result.IsSuccess, Is.True);
+        Assert.That(result.Value.TotalAmount, Is.EqualTo(130.00m));
+
+        // Verify events were published
+        _mockEventPublisher.Verify(
+            x => x.QueueEventAsync(It.IsAny<OrderCreatedNotificationEvent>(), It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        // Verify order was saved
+        var savedOrder = await _context.Orders.FindAsync(result.Value.Id);
+        Assert.That(savedOrder, Is.Not.Null);
+        Assert.That(savedOrder.Items.Count, Is.EqualTo(2));
+    }
+
+    [Test]
+    public async Task Should_Get_Customer_Orders_With_Specification()
+    {
+        // Arrange
+        var customer = await _context.Customers.FirstAsync();
+
+        // Act
+        var orders = await _orderService.GetCustomerOrdersAsync(
+            customer.Id,
+            OrderStatus.Confirmed,
+            DateTime.UtcNow.AddDays(-15),
+            DateTime.UtcNow);
+
+        // Assert
+        Assert.That(orders.Items.Count, Is.EqualTo(1));
+        Assert.That(orders.Items.First().Status, Is.EqualTo(OrderStatus.Confirmed));
+    }
+
+    [Test]
+    public async Task Should_Handle_Complex_Business_Rules()
+    {
+        // Arrange
+        var customer = await _context.Customers.FirstAsync();
+        var order = await _context.Orders.FirstAsync(o => o.CustomerId == customer.Id);
+
+        // Act
+        var result = await _orderService.ConfirmOrderAsync(order.Id);
+
+        // Assert
+        Assert.That(result.IsSuccess, Is.True);
+
+        // Verify background jobs were scheduled
+        _mockBackgroundJobService.Verify(
+            x => x.Enqueue(It.IsAny<Expression<Func<Task>>>()),
+            Times.AtLeastOnce);
+    }
+}
+```
+
+## Performance Optimization Examples
+
+### 1. Efficient Querying with Projections
+```csharp
+// DTO for projections
+public class OrderSummaryDto
+{
+    public Guid Id { get; set; }
+    public string OrderNumber { get; set; }
+    public string CustomerName { get; set; }
+    public decimal TotalAmount { get; set; }
+    public OrderStatus Status { get; set; }
+    public DateTime CreatedDate { get; set; }
+}
+
+// Efficient query with projection
+public class GetOrderSummariesQuery : IRequest<IPaginate<OrderSummaryDto>>, ICachableRequest
+{
+    public int Page { get; set; } = 0;
+    public int Size { get; set; } = 10;
+    public OrderStatus? Status { get; set; }
+
+    public bool BypassCache { get; set; }
+    public string CacheKey => $"OrderSummaries-{Page}-{Size}-{Status}";
+    public string? CacheGroupKey => "OrderSummaries";
+    public TimeSpan? SlidingExpiration => TimeSpan.FromMinutes(15);
+}
+
+public class GetOrderSummariesQueryHandler : IRequestHandler<GetOrderSummariesQuery, IPaginate<OrderSummaryDto>>
+{
+    private readonly ApplicationDbContext _context;
+
+    public GetOrderSummariesQueryHandler(ApplicationDbContext context)
+    {
+        _context = context;
+    }
+
+    public async Task<IPaginate<OrderSummaryDto>> Handle(GetOrderSummariesQuery request, CancellationToken cancellationToken)
+    {
+        var query = _context.Orders
+            .AsNoTracking() // Important for read-only operations
+            .Include(o => o.Customer)
+            .Where(o => o.DeletedDate == null); // Explicit soft delete check
+
+        if (request.Status.HasValue)
+        {
+            query = query.Where(o => o.Status == request.Status.Value);
+        }
+
+        // Project to DTO to reduce data transfer
+        var projectedQuery = query.Select(o => new OrderSummaryDto
+        {
+            Id = o.Id,
+            OrderNumber = o.OrderNumber,
+            CustomerName = $"{o.Customer.FirstName} {o.Customer.LastName}",
+            TotalAmount = o.TotalAmount,
+            Status = o.Status,
+            CreatedDate = o.CreatedDate
+        });
+
+        return await projectedQuery
+            .OrderByDescending(o => o.CreatedDate)
+            .ToPaginateAsync(request.Page, request.Size, 0, cancellationToken);
+    }
+}
+```
+
+### 2. Bulk Operations for Performance
+```csharp
+public class BulkOrderService
+{
+    private readonly ApplicationDbContext _context;
+    private readonly ILogger<BulkOrderService> _logger;
+
+    public BulkOrderService(ApplicationDbContext context, ILogger<BulkOrderService> logger)
+    {
+        _context = context;
+        _logger = logger;
+    }
+
+    public async Task<Result> BulkUpdateOrderStatusAsync(List<Guid> orderIds, OrderStatus newStatus)
+    {
+        using var transaction = await _context.Database.BeginTransactionAsync();
+
+        try
+        {
+            // Bulk update using raw SQL for performance
+            var affectedRows = await _context.Database.ExecuteSqlRawAsync(
+                "UPDATE Orders SET Status = {0}, UpdatedDate = {1} WHERE Id IN ({2}) AND DeletedDate IS NULL",
+                (int)newStatus,
+                DateTime.UtcNow,
+                string.Join(",", orderIds.Select(id => $"'{id}'")));
+
+            _logger.LogInformation("Bulk updated {Count} orders to status {Status}", affectedRows, newStatus);
+
+            // Publish events for updated orders
+            var updatedOrders = await _context.Orders
+                .Where(o => orderIds.Contains(o.Id))
+                .ToListAsync();
+
+            foreach (var order in updatedOrders)
+            {
+                order.AddDomainEvent(new OrderStatusChangedEvent(order.Id, newStatus));
+            }
+
+            await _context.SaveChangesAsync();
+            await transaction.CommitAsync();
+
+            return Result.Success();
+        }
+        catch (Exception ex)
+        {
+            await transaction.RollbackAsync();
+            _logger.LogError(ex, "Failed to bulk update order status");
+            return Result.Failure("Failed to update orders");
+        }
+    }
+
+    public async Task<Result> BulkCreateOrdersAsync(List<CreateOrderRequest> requests)
+    {
+        const int batchSize = 100;
+        var batches = requests.Chunk(batchSize);
+
+        foreach (var batch in batches)
+        {
+            var orders = batch.Select(request => new Order(
+                GenerateOrderNumber(),
+                request.CustomerId
+            )).ToList();
+
+            _context.Orders.AddRange(orders);
+        }
+
+        await _context.SaveChangesAsync();
+        return Result.Success();
+    }
+}
+```
+
+### 3. Caching Strategies
+```csharp
+// Cache removal strategy
+public class OrderCacheInvalidationService
+{
+    private readonly IMemoryCache _cache;
+    private readonly ILogger<OrderCacheInvalidationService> _logger;
+
+    public OrderCacheInvalidationService(IMemoryCache cache, ILogger<OrderCacheInvalidationService> logger)
+    {
+        _cache = cache;
+        _logger = logger;
+    }
+
+    public void InvalidateOrderCaches(Guid orderId, Guid customerId)
+    {
+        var cacheKeys = new[]
+        {
+            $"Order-{orderId}",
+            $"Order-Customer-{customerId}",
+            "OrderSummaries",
+            $"CustomerOrders-{customerId}"
+        };
+
+        foreach (var key in cacheKeys)
+        {
+            _cache.Remove(key);
+            _logger.LogDebug("Removed cache key: {CacheKey}", key);
+        }
+    }
+}
+
+// Cache warming service
+public class CacheWarmupService : IHostedService
+{
+    private readonly IServiceProvider _serviceProvider;
+    private readonly ILogger<CacheWarmupService> _logger;
+
+    public CacheWarmupService(IServiceProvider serviceProvider, ILogger<CacheWarmupService> logger)
+    {
+        _serviceProvider = serviceProvider;
+        _logger = logger;
+    }
+
+    public async Task StartAsync(CancellationToken cancellationToken)
+    {
+        _logger.LogInformation("Starting cache warmup");
+
+        using var scope = _serviceProvider.CreateScope();
+        var mediator = scope.ServiceProvider.GetRequiredService<IMediator>();
+
+        try
+        {
+            // Warm up frequently accessed data
+            await mediator.Send(new GetOrderSummariesQuery { Page = 0, Size = 50 }, cancellationToken);
+            await mediator.Send(new GetActiveCustomersQuery { Page = 0, Size = 100 }, cancellationToken);
+
+            _logger.LogInformation("Cache warmup completed successfully");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Cache warmup failed");
+        }
+    }
+
+    public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+}
+```
+
+## Best Practices and Patterns
+
+### 1. Repository Pattern with Unit of Work
+```csharp
+public class OrderManagementService
+{
+    private readonly IUnitOfWork _unitOfWork;
+    private readonly IAsyncRepository<Order, Guid> _orderRepository;
+    private readonly IAsyncRepository<Customer, Guid> _customerRepository;
+    private readonly IAsyncRepository<Product, Guid> _productRepository;
+    private readonly IDomainEventPublisher _eventPublisher;
+
+    public OrderManagementService(
+        IUnitOfWork unitOfWork,
+        IAsyncRepository<Order, Guid> orderRepository,
+        IAsyncRepository<Customer, Guid> customerRepository,
+        IAsyncRepository<Product, Guid> productRepository,
+        IDomainEventPublisher eventPublisher)
+    {
+        _unitOfWork = unitOfWork;
+        _orderRepository = orderRepository;
+        _customerRepository = customerRepository;
+        _productRepository = productRepository;
+        _eventPublisher = eventPublisher;
+    }
+
+    public async Task<Result<OrderDto>> ProcessComplexOrderAsync(ComplexOrderRequest request)
+    {
+        await _unitOfWork.BeginTransactionAsync();
+
+        try
+        {
+            // 1. Validate customer
+            var customer = await _customerRepository.GetAsync(c => c.Id == request.CustomerId);
+            if (customer == null)
+            {
+                return Result.Failure<OrderDto>("Customer not found");
+            }
+
+            // 2. Validate products and check inventory
+            var productIds = request.Items.Select(i => i.ProductId).ToList();
+            var products = await _productRepository.GetListAsync(p => productIds.Contains(p.Id));
+
+            if (products.Items.Count != productIds.Count)
+            {
+                return Result.Failure<OrderDto>("Some products not found");
+            }
+
+            // 3. Create order
+            var order = new Order(GenerateOrderNumber(), request.CustomerId);
+
+            // 4. Add items with inventory check
+            foreach (var itemRequest in request.Items)
+            {
+                var product = products.Items.First(p => p.Id == itemRequest.ProductId);
+
+                if (product.StockQuantity < itemRequest.Quantity)
+                {
+                    return Result.Failure<OrderDto>($"Insufficient stock for product {product.Name}");
+                }
+
+                order.AddItem(itemRequest.ProductId, itemRequest.Quantity, product.Price);
+
+                // Update inventory
+                product.ReduceStock(itemRequest.Quantity);
+                await _productRepository.UpdateAsync(product);
+            }
+
+            // 5. Apply discounts if applicable
+            if (await customer.IsEligibleForDiscountAsync())
+            {
+                order.ApplyDiscount(0.1m); // 10% discount
+            }
+
+            // 6. Save order
+            var savedOrder = await _orderRepository.AddAsync(order);
+
+            // 7. Update customer statistics
+            customer.UpdateOrderStatistics(order.TotalAmount);
+            await _customerRepository.UpdateAsync(customer);
+
+            // 8. Commit transaction
+            await _unitOfWork.CommitTransactionAsync();
+
+            // 9. Publish events after successful transaction
+            await _eventPublisher.PublishAsync(new ComplexOrderProcessedEvent(savedOrder.Id, customer.Id));
+
+            var orderDto = MapToDto(savedOrder);
+            return Result.Success(orderDto);
+        }
+        catch (Exception ex)
+        {
+            await _unitOfWork.RollbackTransactionAsync();
+            return Result.Failure<OrderDto>($"Failed to process order: {ex.Message}");
+        }
+    }
+}
+```
+
+### 2. Error Handling and Resilience
+```csharp
+public class ResilientOrderService
+{
+    private readonly IAsyncRepository<Order, Guid> _orderRepository;
+    private readonly ILogger<ResilientOrderService> _logger;
+    private readonly IBackgroundJobService _backgroundJobService;
+
+    public async Task<Result<Order>> CreateOrderWithRetryAsync(CreateOrderRequest request)
+    {
+        const int maxRetries = 3;
+        var retryCount = 0;
+
+        while (retryCount < maxRetries)
+        {
+            try
+            {
+                var order = new Order(GenerateOrderNumber(), request.CustomerId);
+
+                foreach (var item in request.Items)
+                {
+                    order.AddItem(item.ProductId, item.Quantity, item.UnitPrice);
+                }
+
+                var savedOrder = await _orderRepository.AddAsync(order);
+
+                _logger.LogInformation("Order {OrderId} created successfully on attempt {Attempt}",
+                    savedOrder.Id, retryCount + 1);
+
+                return Result.Success(savedOrder);
+            }
+            catch (DbUpdateConcurrencyException ex)
+            {
+                retryCount++;
+                _logger.LogWarning("Concurrency conflict on attempt {Attempt}: {Error}",
+                    retryCount, ex.Message);
+
+                if (retryCount >= maxRetries)
+                {
+                    _logger.LogError("Failed to create order after {MaxRetries} attempts", maxRetries);
+                    return Result.Failure<Order>("Failed to create order due to concurrency conflicts");
+                }
+
+                // Wait before retry with exponential backoff
+                await Task.Delay(TimeSpan.FromMilliseconds(Math.Pow(2, retryCount) * 100));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Unexpected error creating order");
+                return Result.Failure<Order>($"Failed to create order: {ex.Message}");
+            }
+        }
+
+        return Result.Failure<Order>("Maximum retry attempts exceeded");
+    }
+
+    public async Task<Result> ProcessOrderWithFallbackAsync(Guid orderId)
+    {
+        try
+        {
+            // Primary processing logic
+            await ProcessOrderPrimaryAsync(orderId);
+            return Result.Success();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Primary order processing failed for {OrderId}, using fallback", orderId);
+
+            try
+            {
+                // Fallback to background processing
+                _backgroundJobService.Enqueue(() => ProcessOrderInBackgroundAsync(orderId));
+                return Result.Success();
+            }
+            catch (Exception fallbackEx)
+            {
+                _logger.LogError(fallbackEx, "Fallback processing also failed for {OrderId}", orderId);
+                return Result.Failure("Both primary and fallback processing failed");
+            }
+        }
+    }
+
+    public async Task ProcessOrderInBackgroundAsync(Guid orderId)
+    {
+        _logger.LogInformation("Processing order {OrderId} in background", orderId);
+
+        // Background processing logic with more lenient error handling
+        try
+        {
+            var order = await _orderRepository.GetAsync(o => o.Id == orderId);
+            if (order != null)
+            {
+                // Process order
+                order.Confirm();
+                await _orderRepository.UpdateAsync(order);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Background processing failed for order {OrderId}", orderId);
+
+            // Schedule retry
+            _backgroundJobService.Schedule(
+                () => ProcessOrderInBackgroundAsync(orderId),
+                TimeSpan.FromMinutes(30));
+        }
+    }
+}
+```
+
+### 3. Monitoring and Health Checks
+```csharp
+public class DatabaseHealthCheck : IHealthCheck
+{
+    private readonly ApplicationDbContext _context;
+
+    public DatabaseHealthCheck(ApplicationDbContext context)
+    {
+        _context = context;
+    }
+
+    public async Task<HealthCheckResult> CheckHealthAsync(CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            await _context.Database.ExecuteSqlRawAsync("SELECT 1", cancellationToken);
+
+            var data = new Dictionary<string, object>
+            {
+                ["database"] = _context.Database.GetConnectionString(),
+                ["timestamp"] = DateTime.UtcNow
+            };
+
+            return HealthCheckResult.Healthy("Database is accessible", data);
+        }
+        catch (Exception ex)
+        {
+            var data = new Dictionary<string, object>
+            {
+                ["error"] = ex.Message,
+                ["timestamp"] = DateTime.UtcNow
+            };
+
+            return HealthCheckResult.Unhealthy("Database is not accessible", data);
+        }
+    }
+}
+
+// Register health checks
+public static class HealthCheckExtensions
+{
+    public static IServiceCollection AddApplicationHealthChecks(this IServiceCollection services)
+    {
+        services.AddHealthChecks()
+            .AddCheck<DatabaseHealthCheck>("database")
+            .AddCheck("memory", () =>
+            {
+                var allocated = GC.GetTotalMemory(false);
+                var data = new Dictionary<string, object>
+                {
+                    ["allocated"] = allocated,
+                    ["gen0"] = GC.CollectionCount(0),
+                    ["gen1"] = GC.CollectionCount(1),
+                    ["gen2"] = GC.CollectionCount(2)
+                };
+
+                return allocated < 1024 * 1024 * 1024 // 1GB
+                    ? HealthCheckResult.Healthy("Memory usage is normal", data)
+                    : HealthCheckResult.Unhealthy("Memory usage is high", data);
+            });
+
+        return services;
+    }
+}
+```
+
+## Quick Reference Guide
+
+### 🚀 Essential Commands
+
+#### Package Installation
+```bash
+# Core packages
+dotnet add package ZCode.Core.Domain
+dotnet add package ZCode.Core.Application
+dotnet add package ZCode.Core.Persistence
+
+# Additional packages
+dotnet add package ZCode.Core.Security
+dotnet add package ZCode.Core.Logging
+dotnet add package ZCode.Core.BackgroundJobs
+dotnet add package ZCode.Core.Testing
+dotnet add package ZCode.Core.CrossCuttingConcerns.Exception.WebApi
+```
+
+#### Service Registration
+```csharp
+// Program.cs - Essential setup
+builder.Services.AddApplicationServices(typeof(Program).Assembly);
+builder.Services.AddPersistenceServices<ApplicationDbContext>();
+builder.Services.AddSecurityServices(builder.Configuration);
+builder.Services.AddJwtAuthentication(builder.Configuration);
+builder.Services.AddBackgroundJobs(connectionString);
+
+// Middleware
+app.ConfigureCustomExceptionMiddleware();
+app.UseAuthentication();
+app.UseAuthorization();
+```
+
+### 📋 Common Patterns Cheat Sheet
+
+#### 1. Entity Creation
+```csharp
+public class User : AuditableEntity<Guid>
+{
+    public Email Email { get; private set; }
+
+    public User(Email email, string firstName, string lastName)
+    {
+        Email = email;
+        // Add domain events
+        AddDomainEvent(new UserCreatedEvent(Id, email.Value));
+    }
+}
+```
+
+#### 2. CQRS Command/Query
+```csharp
+// Command
+public class CreateUserCommand : IRequest<Result<UserDto>>, ITransactionalRequest
+{
+    public string Email { get; set; }
+    public string FirstName { get; set; }
+}
+
+// Query with caching
+public class GetUserQuery : IRequest<UserDto>, ICachableRequest
+{
+    public Guid Id { get; set; }
+    public string CacheKey => $"User-{Id}";
+    public TimeSpan? SlidingExpiration => TimeSpan.FromMinutes(30);
+}
+```
+
+#### 3. Repository Usage
+```csharp
+// Basic operations
+var user = await _userRepository.GetAsync(u => u.Id == id);
+var users = await _userRepository.GetListAsync(index: 0, size: 10);
+await _userRepository.AddAsync(user);
+await _userRepository.UpdateAsync(user);
+
+// With specifications
+var activeUsers = await _userRepository.GetListBySpecificationAsync(
+    new ActiveUserSpecification());
+
+// Dynamic queries
+var dynamicQuery = new DynamicQuery
+{
+    Filter = new Filter { Field = "Name", Operator = "contains", Value = "John" }
+};
+var results = await _userRepository.GetListByDynamicAsync(dynamicQuery);
+```
+
+#### 4. Event Handling
+```csharp
+// Pre-save event
+public class UserValidationEvent : DomainEvent, IPreSaveDomainEvent { }
+
+// Post-save event
+public class UserNotificationEvent : DomainEvent, IPostSaveDomainEvent { }
+
+// Event handler with nested events
+public class UserCreatedEventHandler : INotificationHandler<UserCreatedEvent>
+{
+    public async Task Handle(UserCreatedEvent notification, CancellationToken cancellationToken)
+    {
+        // Queue nested events
+        await _eventPublisher.QueueEventAsync(
+            new SendWelcomeEmailEvent(notification.UserId),
+            cancellationToken);
+    }
+}
+```
+
+#### 5. Background Jobs
+```csharp
+// Fire and forget
+_backgroundJobService.Enqueue(() => SendEmail(email));
+
+// Delayed
+_backgroundJobService.Schedule(() => SendReminder(email), TimeSpan.FromHours(24));
+
+// Recurring
+_backgroundJobService.AddOrUpdateRecurringJob(
+    "daily-reports",
+    () => GenerateReport(),
+    "0 9 * * *");
+```
+
+#### 6. Security
+```csharp
+// JWT generation
+var claims = new[] { new Claim(ClaimTypes.NameIdentifier, userId) };
+var token = _jwtService.GenerateToken(claims);
+
+// Password hashing
+var hashedPassword = _hashingService.HashPassword(password);
+var isValid = _hashingService.VerifyPassword(password, hashedPassword);
+
+// Current user
+var userId = _currentUserService.UserId;
+var isAdmin = _currentUserService.IsInRole("Admin");
+```
+
+#### 7. Testing
+```csharp
+// Entity builder
+var user = new UserBuilder()
+    .WithEmail("test@example.com")
+    .WithName("John", "Doe")
+    .Build();
+
+// In-memory database
+var context = InMemoryDbContextFactory.Create<ApplicationDbContext>();
+var repository = new EfRepositoryBase<User, Guid, ApplicationDbContext>(context);
+```
+
+### 🔧 Configuration Templates
+
+#### appsettings.json
+```json
+{
+  "ConnectionStrings": {
+    "DefaultConnection": "Server=(localdb)\\mssqllocaldb;Database=YourDb;Trusted_Connection=true"
+  },
+  "JwtSettings": {
+    "SecretKey": "your-32-character-secret-key-here",
+    "Issuer": "YourApp",
+    "Audience": "YourAppUsers",
+    "ExpirationMinutes": 60
+  },
+  "Serilog": {
+    "MinimumLevel": "Information",
+    "WriteTo": [
+      { "Name": "Console" },
+      { "Name": "File", "Args": { "path": "logs/log-.txt", "rollingInterval": "Day" } }
+    ]
+  }
+}
+```
+
+#### DbContext
+```csharp
+protected override void OnModelCreating(ModelBuilder modelBuilder)
+{
+    modelBuilder.RegisterAllEntities<IEntity<Guid>>(Assembly.GetExecutingAssembly());
+    modelBuilder.ApplySoftDeleteQueryFilter();
+    base.OnModelCreating(modelBuilder);
+}
+```
+
+### 🎯 Best Practices Summary
+
+#### ✅ Do's
+- Use `AsNoTracking()` for read-only queries
+- Implement specifications for complex queries
+- Use Result pattern for error handling
+- Cache frequently accessed data
+- Use domain events for decoupling
+- Implement proper logging with structured data
+- Use background jobs for long-running tasks
+- Write comprehensive tests with builders
+
+#### ❌ Don'ts
+- Don't use entities directly in API responses
+- Don't ignore soft delete in custom queries
+- Don't forget to handle domain events timing
+- Don't cache sensitive data
+- Don't expose internal domain logic in controllers
+- Don't use synchronous methods in async contexts
+- Don't forget to dispose resources properly
+
+### 📊 Performance Tips
+
+1. **Database Queries**
+   - Use projections for large datasets
+   - Implement proper indexing
+   - Use bulk operations for large updates
+   - Consider read replicas for reporting
+
+2. **Caching**
+   - Cache at multiple levels (memory, distributed)
+   - Implement cache invalidation strategies
+   - Use cache warming for critical data
+   - Monitor cache hit ratios
+
+3. **Background Processing**
+   - Use queues for decoupling
+   - Implement retry mechanisms
+   - Monitor job failures
+   - Use appropriate job scheduling
+
+4. **Memory Management**
+   - Dispose DbContext properly
+   - Use streaming for large files
+   - Implement pagination
+   - Monitor memory usage
+
+### 🔍 Troubleshooting Guide
+
+#### Common Issues
+
+1. **Domain Events Not Firing**
+   - Check if interceptors are registered
+   - Verify event inheritance (IPreSaveDomainEvent/IPostSaveDomainEvent)
+   - Ensure SaveChanges is called
+
+2. **Caching Not Working**
+   - Verify cache key generation
+   - Check cache expiration settings
+   - Ensure ICachableRequest is implemented
+
+3. **Background Jobs Not Running**
+   - Check Hangfire dashboard
+   - Verify connection string
+   - Check job registration
+
+4. **Authentication Issues**
+   - Verify JWT settings
+   - Check token expiration
+   - Ensure middleware order
+
+Bu ətraflı nümunələr və quick reference guide sizin ZCode.CorePackages library-lərinin bütün xüsusiyyətlərini real layihələrdə necə istifadə edəcəyinizi göstərir. Performance optimization, error handling, caching strategies, monitoring və troubleshooting kimi enterprise-level məsələlər də əhatə edilmişdir.
+```
+```
+```
 ```
