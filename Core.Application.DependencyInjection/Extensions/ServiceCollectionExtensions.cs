@@ -1,16 +1,16 @@
-using System.Reflection;
+using AutoMapper;
 using FluentValidation;
-using FluentValidation.AspNetCore;
 using MediatR;
 using Microsoft.Extensions.DependencyInjection;
+using System.Reflection;
 using ZCode.Core.Application.Events;
+using ZCode.Core.Application.Mapping;
 using ZCode.Core.Application.Pipelines.Caching;
-using ZCode.Core.Application.Pipelines.Logging;
 using ZCode.Core.Application.Pipelines.Performance;
 using ZCode.Core.Application.Pipelines.Transaction;
 using ZCode.Core.Application.Pipelines.Validation;
 
-namespace ZCode.Core.Application.Extensions;
+namespace ZCode.Core.Application.DependencyInjection.Extensions;
 
 public static class ServiceCollectionExtensions
 {
@@ -27,6 +27,17 @@ public static class ServiceCollectionExtensions
 
         // Register domain event publisher
         services.AddScoped<IDomainEventPublisher, DomainEventPublisher>();
+
+        return services;
+    }
+
+    public static IServiceCollection AddAutoMapperServices(this IServiceCollection services,Action<IMapperConfigurationExpression> configuration, params Assembly[] assemblies)
+    {
+
+        services.AddAutoMapper(configuration, assemblies);
+
+        // Mapper Service
+        services.AddScoped<IMapperService, AutoMapperService>();
 
         return services;
     }
