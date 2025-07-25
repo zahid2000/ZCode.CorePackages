@@ -867,6 +867,356 @@ public class ConfigurationService
 }
 ```
 
+## Mapping Examples
+
+### AutoMapper with IMapFrom and IMapTo Patterns
+
+#### 1. Service Registration
+```csharp
+// Program.cs
+using ZCode.Core.Application.Extensions;
+
+var builder = WebApplication.CreateBuilder(args);
+
+// Add AutoMapper services with automatic profile discovery
+builder.Services.AddAutoMapperServices(typeof(Program).Assembly);
+
+// Or with custom configuration
+builder.Services.AddAutoMapperServices(cfg =>
+{
+    cfg.AllowNullCollections = true;
+    cfg.AllowNullDestinationValues = true;
+}, typeof(Program).Assembly);
+```
+
+#### 2. IMapFrom Pattern - Entity to DTO
+```csharp
+public class UserDto : IMapFrom<User>
+{
+    public Guid Id { get; set; }
+    public string Email { get; set; } = string.Empty;
+    public string FirstName { get; set; } = string.Empty;
+    public string LastName { get; set; } = string.Empty;
+    public string FullName { get; set; } = string.Empty;
+    public DateTime CreatedDate { get; set; }
+
+    // Custom mapping configuration
+    public void Mapping(Profile profile)
+    {
+        profile.CreateMap<User, UserDto>()
+            .ForMember(dest => dest.Email, opt => opt.MapFrom(src => src.Email.Value))
+            .ForMember(dest => dest.FullName, opt => opt.MapFrom(src => $"{src.FirstName} {src.LastName}"));
+    }
+}
+```
+
+#### 3. IMapTo Pattern - Command to Entity
+```csharp
+public class CreateUserCommand : IMapTo<User>
+{
+    public string Email { get; set; } = string.Empty;
+    public string FirstName { get; set; } = string.Empty;
+    public string LastName { get; set; } = string.Empty;
+
+    // Custom mapping configuration
+    public void Mapping(Profile profile)
+    {
+        profile.CreateMap<CreateUserCommand, User>()
+            .ForMember(dest => dest.Id, opt => opt.MapFrom(src => Guid.NewGuid()))
+            .ForMember(dest => dest.Email, opt => opt.MapFrom(src => Email.Create(src.Email)))
+            .ForMember(dest => dest.CreatedDate, opt => opt.MapFrom(src => DateTime.UtcNow));
+    }
+}
+```
+
+#### 4. Using IMapperService in Application Layer
+```csharp
+public class UserService
+{
+    private readonly IMapperService _mapper;
+    private readonly IRepository<User, Guid> _userRepository;
+
+    public UserService(IMapperService mapper, IRepository<User, Guid> userRepository)
+    {
+        _mapper = mapper;
+        _userRepository = userRepository;
+    }
+
+    public async Task<UserDto> CreateUserAsync(CreateUserCommand command)
+    {
+        // Map command to entity using IMapTo pattern
+        var user = _mapper.Map<User>(command);
+
+        var createdUser = await _userRepository.AddAsync(user);
+
+        // Map entity to DTO using IMapFrom pattern
+        return _mapper.Map<UserDto>(createdUser);
+    }
+
+    public async Task<List<UserDto>> GetAllUsersAsync()
+    {
+        var users = await _userRepository.GetAllAsync();
+
+        // Map collection
+        return _mapper.Map<List<UserDto>>(users).ToList();
+    }
+
+    public async Task<UserDto> UpdateUserAsync(Guid id, UpdateUserCommand command)
+    {
+        var existingUser = await _userRepository.GetAsync(u => u.Id == id);
+        if (existingUser == null)
+            throw new NotFoundException("User not found");
+
+        // Map command to existing entity (merge)
+        _mapper.Map(command, existingUser);
+
+        var updatedUser = await _userRepository.UpdateAsync(existingUser);
+        return _mapper.Map<UserDto>(updatedUser);
+    }
+}
+```
+
+#### 5. Complex Mapping with Nested Objects
+```csharp
+public class UserDetailDto : IMapFrom<User>
+{
+    public Guid Id { get; set; }
+    public string Email { get; set; } = string.Empty;
+    public string FullName { get; set; } = string.Empty;
+    public AddressDto Address { get; set; } = null!;
+    public List<OrderDto> Orders { get; set; } = new();
+
+    public void Mapping(Profile profile)
+    {
+        profile.CreateMap<User, UserDetailDto>()
+            .ForMember(dest => dest.Email, opt => opt.MapFrom(src => src.Email.Value))
+            .ForMember(dest => dest.FullName, opt => opt.MapFrom(src => $"{src.FirstName} {src.LastName}"))
+            .ForMember(dest => dest.Address, opt => opt.MapFrom(src => src.Address))
+            .ForMember(dest => dest.Orders, opt => opt.MapFrom(src => src.Orders));
+    }
+}
+
+public class AddressDto : IMapFrom<Address>
+{
+    public string Street { get; set; } = string.Empty;
+    public string City { get; set; } = string.Empty;
+    public string Country { get; set; } = string.Empty;
+}
+
+public class OrderDto : IMapFrom<Order>
+{
+    public Guid Id { get; set; }
+    public decimal TotalAmount { get; set; }
+    public DateTime OrderDate { get; set; }
+}
+```
+
+#### 6. Conditional Mapping
+```csharp
+public class UserSummaryDto : IMapFrom<User>
+{
+    public Guid Id { get; set; }
+    public string DisplayName { get; set; } = string.Empty;
+    public string Status { get; set; } = string.Empty;
+    public bool IsActive { get; set; }
+
+    public void Mapping(Profile profile)
+    {
+        profile.CreateMap<User, UserSummaryDto>()
+            .ForMember(dest => dest.DisplayName, opt => opt.MapFrom(src =>
+                string.IsNullOrEmpty(src.FirstName) ? src.Email.Value : $"{src.FirstName} {src.LastName}"))
+            .ForMember(dest => dest.Status, opt => opt.MapFrom(src =>
+                src.IsActive ? "Active" : "Inactive"))
+            .ForMember(dest => dest.IsActive, opt => opt.MapFrom(src => src.IsActive));
+    }
+}
+```
+
+### Mapster Alternative Mapping
+
+#### 1. Service Registration for Mapster
+```csharp
+// Program.cs - Using Mapster instead of AutoMapper
+using ZCode.Core.Application.Extensions;
+
+var builder = WebApplication.CreateBuilder(args);
+
+// Add Mapster services with automatic configuration discovery
+builder.Services.AddMapsterServices(typeof(Program).Assembly);
+```
+
+#### 2. IMapsterFrom Pattern - Entity to DTO
+```csharp
+public class UserMapsterDto : IMapsterFrom<User>
+{
+    public Guid Id { get; set; }
+    public string Email { get; set; } = string.Empty;
+    public string FirstName { get; set; } = string.Empty;
+    public string LastName { get; set; } = string.Empty;
+    public string FullName { get; set; } = string.Empty;
+    public DateTime CreatedDate { get; set; }
+
+    // Custom mapping configuration with Mapster
+    public void Mapping(TypeAdapterConfig config)
+    {
+        config.NewConfig<User, UserMapsterDto>()
+            .Map(dest => dest.Email, src => src.Email.Value)
+            .Map(dest => dest.FullName, src => $"{src.FirstName} {src.LastName}");
+    }
+}
+```
+
+#### 3. IMapsterTo Pattern - Command to Entity
+```csharp
+public class CreateUserMapsterCommand : IMapsterTo<User>
+{
+    public string Email { get; set; } = string.Empty;
+    public string FirstName { get; set; } = string.Empty;
+    public string LastName { get; set; } = string.Empty;
+
+    // Custom mapping configuration with Mapster
+    public void Mapping(TypeAdapterConfig config)
+    {
+        config.NewConfig<CreateUserMapsterCommand, User>()
+            .Map(dest => dest.Id, src => Guid.NewGuid())
+            .Map(dest => dest.Email, src => Email.Create(src.Email))
+            .Map(dest => dest.CreatedDate, src => DateTime.UtcNow);
+    }
+}
+```
+
+#### 4. Performance Comparison - AutoMapper vs Mapster
+```csharp
+public class MappingPerformanceService
+{
+    private readonly IMapperService _autoMapperService;
+    private readonly IMapperService _mapsterService;
+
+    public MappingPerformanceService(
+        [FromKeyedServices("AutoMapper")] IMapperService autoMapperService,
+        [FromKeyedServices("Mapster")] IMapperService mapsterService)
+    {
+        _autoMapperService = autoMapperService;
+        _mapsterService = mapsterService;
+    }
+
+    public async Task<BenchmarkResult> CompareMappingPerformance(List<User> users)
+    {
+        var stopwatch = new Stopwatch();
+
+        // AutoMapper performance
+        stopwatch.Start();
+        var autoMapperResults = _autoMapperService.Map<List<UserDto>>(users);
+        stopwatch.Stop();
+        var autoMapperTime = stopwatch.ElapsedMilliseconds;
+
+        stopwatch.Reset();
+
+        // Mapster performance
+        stopwatch.Start();
+        var mapsterResults = _mapsterService.Map<List<UserMapsterDto>>(users);
+        stopwatch.Stop();
+        var mapsterTime = stopwatch.ElapsedMilliseconds;
+
+        return new BenchmarkResult
+        {
+            AutoMapperTime = autoMapperTime,
+            MapsterTime = mapsterTime,
+            PerformanceGain = ((double)(autoMapperTime - mapsterTime) / autoMapperTime) * 100
+        };
+    }
+}
+
+public class BenchmarkResult
+{
+    public long AutoMapperTime { get; set; }
+    public long MapsterTime { get; set; }
+    public double PerformanceGain { get; set; }
+}
+```
+
+#### 5. Multiple Mappers Registration (Recommended)
+```csharp
+// Program.cs - Register both AutoMapper and Mapster with Strategy Selector
+var builder = WebApplication.CreateBuilder(args);
+
+// Option 1: Register both mappers with strategy selector (Recommended)
+builder.Services.AddBothMappingServices(typeof(Program).Assembly);
+
+// Option 2: Manual registration
+// builder.Services.AddAutoMapperServices(typeof(Program).Assembly);
+// builder.Services.AddMapsterServices(typeof(Program).Assembly);
+// builder.Services.AddMappingStrategySelector();
+
+// Usage with Strategy Selector (Recommended)
+public class UserService
+{
+    private readonly IMappingStrategySelector _mappingSelector;
+    private readonly IRepository<User, Guid> _userRepository;
+
+    public UserService(
+        IMappingStrategySelector mappingSelector,
+        IRepository<User, Guid> userRepository)
+    {
+        _mappingSelector = mappingSelector;
+        _userRepository = userRepository;
+    }
+
+    public async Task<UserDto> GetUserAsync(Guid id, MappingStrategy strategy = MappingStrategy.Mapster)
+    {
+        var user = await _userRepository.GetAsync(u => u.Id == id);
+        var mapper = _mappingSelector.GetMapper(strategy);
+        return mapper.Map<UserDto>(user);
+    }
+
+    // Or use specific mappers directly
+    public async Task<UserDto> GetUserWithAutoMapper(Guid id)
+    {
+        var user = await _userRepository.GetAsync(u => u.Id == id);
+        var mapper = _mappingSelector.GetMapper(MappingStrategy.AutoMapper);
+        return mapper.Map<UserDto>(user);
+    }
+
+    public async Task<UserMapsterDto> GetUserWithMapster(Guid id)
+    {
+        var user = await _userRepository.GetAsync(u => u.Id == id);
+        var mapper = _mappingSelector.GetMapper(MappingStrategy.Mapster);
+        return mapper.Map<UserMapsterDto>(user);
+    }
+}
+```
+
+#### 6. Advanced Mapster Configuration
+```csharp
+public class AdvancedUserDto : IMapsterFrom<User>
+{
+    public Guid Id { get; set; }
+    public string Email { get; set; } = string.Empty;
+    public string DisplayName { get; set; } = string.Empty;
+    public UserStatus Status { get; set; }
+    public List<string> Roles { get; set; } = new();
+
+    public void Mapping(TypeAdapterConfig config)
+    {
+        config.NewConfig<User, AdvancedUserDto>()
+            .Map(dest => dest.Email, src => src.Email.Value)
+            .Map(dest => dest.DisplayName, src =>
+                string.IsNullOrEmpty(src.FirstName) ? src.Email.Value : $"{src.FirstName} {src.LastName}")
+            .Map(dest => dest.Status, src => src.IsActive ? UserStatus.Active : UserStatus.Inactive)
+            .Map(dest => dest.Roles, src => src.UserRoles.Select(ur => ur.Role.Name))
+            .IgnoreNullValues(true)
+            .PreserveReference(true);
+    }
+}
+
+public enum UserStatus
+{
+    Active,
+    Inactive,
+    Suspended
+}
+```
+
 ## Testing Examples
 
 ### Security Component Testing

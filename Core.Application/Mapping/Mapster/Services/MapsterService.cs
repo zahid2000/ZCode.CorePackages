@@ -1,14 +1,15 @@
-using AutoMapper;
+using Mapster;
+using ZCode.Core.Application.Mapping.Services;
 
-namespace ZCode.Core.Application.Mapping;
+namespace ZCode.Core.Application.Mapping.Mapster.Services;
 
-public class AutoMapperService : IMapperService
+public class MapsterService : IMapperService
 {
-    private readonly IMapper _mapper;
+    private readonly TypeAdapterConfig _config;
 
-    public AutoMapperService(IMapper mapper)
+    public MapsterService(TypeAdapterConfig config)
     {
-        _mapper = mapper ?? throw new ArgumentNullException(nameof(mapper));
+        _config = config ?? throw new ArgumentNullException(nameof(config));
     }
 
     public TDestination Map<TDestination>(object source)
@@ -16,7 +17,7 @@ public class AutoMapperService : IMapperService
         if (source == null)
             throw new ArgumentNullException(nameof(source));
 
-        return _mapper.Map<TDestination>(source);
+        return source.Adapt<TDestination>(_config);
     }
 
     public TDestination Map<TSource, TDestination>(TSource source)
@@ -24,7 +25,7 @@ public class AutoMapperService : IMapperService
         if (source == null)
             throw new ArgumentNullException(nameof(source));
 
-        return _mapper.Map<TSource, TDestination>(source);
+        return source.Adapt<TSource, TDestination>(_config);
     }
 
     public TDestination Map<TSource, TDestination>(TSource source, TDestination destination)
@@ -35,7 +36,7 @@ public class AutoMapperService : IMapperService
         if (destination == null)
             throw new ArgumentNullException(nameof(destination));
 
-        return _mapper.Map(source, destination);
+        return source.Adapt(destination, _config);
     }
 
     public IEnumerable<TDestination> Map<TDestination>(IEnumerable<object> source)
@@ -43,7 +44,7 @@ public class AutoMapperService : IMapperService
         if (source == null)
             throw new ArgumentNullException(nameof(source));
 
-        return _mapper.Map<IEnumerable<TDestination>>(source);
+        return source.Adapt<IEnumerable<TDestination>>(_config);
     }
 
     public IEnumerable<TDestination> Map<TSource, TDestination>(IEnumerable<TSource> source)
@@ -51,6 +52,6 @@ public class AutoMapperService : IMapperService
         if (source == null)
             throw new ArgumentNullException(nameof(source));
 
-        return _mapper.Map<IEnumerable<TSource>, IEnumerable<TDestination>>(source);
+        return source.Adapt<IEnumerable<TSource>, IEnumerable<TDestination>>(_config);
     }
 }

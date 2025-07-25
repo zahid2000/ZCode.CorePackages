@@ -1,4 +1,4 @@
-namespace ZCode.Core.Application.Mapping;
+namespace ZCode.Core.Application.Mapping.Services;
 
 public interface IMapperService
 {
